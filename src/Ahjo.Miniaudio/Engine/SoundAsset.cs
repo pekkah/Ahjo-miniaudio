@@ -56,34 +56,22 @@ public sealed unsafe class SoundAsset : IDisposable
     {
         var data = AudioDecoder.CopyToNative(encoded);
         var size = (nuint)encoded.Length;
-        var probe = NativeBlock.Alloc<ma_decoder>();
         try
         {
-            MaCheck.ThrowIfFailed(AudioDecoder.Init(data, size, default, probe), "ma_decoder_init_memory");
+            var probe = AudioDecoder.Open(data, size, default, out var channels, out var sampleRate);
             try
             {
-                AudioDecoder.GetFormat(probe, out var channels, out var sampleRate);
-                ulong length;
-                if (Ma.ma_decoder_get_length_in_pcm_frames(probe, &length) != ma_result.MA_SUCCESS)
-                {
-                    length = 0;
-                }
-
-                return new SoundAsset(null, data, size, channels, sampleRate, length);
+                return new SoundAsset(null, data, size, channels, sampleRate, AudioDecoder.Length(probe));
             }
             finally
             {
-                Ma.ma_decoder_uninit(probe);
+                AudioDecoder.Close(probe);
             }
         }
         catch
         {
             AudioDecoder.FreeNative(data);
             throw;
-        }
-        finally
-        {
-            NativeBlock.Free(probe);
         }
     }
 

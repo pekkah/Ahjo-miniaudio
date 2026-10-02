@@ -239,6 +239,17 @@ wrong disposal order cannot cause a use-after-free:
   `SoundAsset.Dispose` releases the owner's reference, and the native PCM or bytes are
   freed when the count reaches zero. Disposing an asset that is still playing is legal,
   and the audio keeps playing.
+- **Pulled engine → its reader.** A `NoDevice` engine is read on another thread, a
+  device's audio thread. `Read` increments an in-flight counter before touching the
+  native engine. `Dispose` clears the pointer, fences, and waits for the counter to
+  drain before `ma_engine_uninit`. A read that arrives later throws
+  `ObjectDisposedException`, which the device latches as its `Fault`, so it plays
+  silence instead of reading freed memory. The cost is two interlocked operations per
+  period.
+- **Groups stay on their engine.** A group passed as a sound's `Group` or as another
+  group's parent must belong to the same engine, or the create throws
+  `ArgumentException`. Otherwise one node would be attached to two engines' graphs
+  and mixed by two audio threads.
 - **Group → sounds.** When `ma_sound_group_uninit` runs on a group with sounds attached,
   `ma_node_uninit` detaches them. They go silent but are not corrupted.
 - `Dispose` never throws and is idempotent. Every other member throws

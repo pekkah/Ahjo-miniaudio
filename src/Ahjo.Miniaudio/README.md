@@ -84,6 +84,11 @@ a context disposes its devices and engines, and an engine disposes its sounds
 and groups. Disposing in the wrong order is therefore safe. A `SoundAsset` is
 reference-counted by its sounds, so disposing it while they play is fine.
 
+This also holds across threads. Disposing a `NoDevice` engine while a device is
+still pulling it waits for the read in progress. After that, the device reports
+`ObjectDisposedException` in its `Fault` and plays silence. Dispose the device
+first to avoid that fault.
+
 ## Errors
 
 Native failures throw `MiniaudioException` with the raw `ma_result`. Misuse

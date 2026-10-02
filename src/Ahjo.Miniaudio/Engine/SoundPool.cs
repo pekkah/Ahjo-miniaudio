@@ -14,9 +14,16 @@ namespace Ahjo.Miniaudio;
 public sealed class SoundPool : IDisposable
 {
     private readonly Sound[] _voices;
-    private int _next;
 
-    private SoundPool(Sound[] voices) => _voices = voices;
+    // When each voice was last played, on a pool-local clock; 0 = never.
+    private readonly long[] _playedAt;
+    private long _clock;
+
+    private SoundPool(Sound[] voices)
+    {
+        _voices = voices;
+        _playedAt = new long[voices.Length];
+    }
 
     /// <summary>Creates <paramref name="voices"/> stopped sounds over <paramref name="asset"/>.</summary>
     /// <exception cref="MiniaudioException">miniaudio could not initialize a voice; none are left behind.</exception>
@@ -76,25 +83,29 @@ public sealed class SoundPool : IDisposable
         }
     }
 
-    // _next is always the voice after the last one played, so scanning from
-    // it finds the least recently played idle voice first — and when none is
-    // idle, _next itself is the least recently played one to steal.
+    // The least recently played idle voice; if every voice is busy, the
+    // least recently played one is stolen. A linear scan over a handful of
+    // voices, allocation-free.
     private Sound Acquire()
     {
-        var count = _voices.Length;
-        for (var i = 0; i < count; i++)
+        var idle = -1;
+        var oldest = 0;
+        for (var i = 0; i < _voices.Length; i++)
         {
-            var index = (_next + i) % count;
-            if (!_voices[index].IsPlaying)
+            if (_playedAt[i] < _playedAt[oldest])
             {
-                _next = (index + 1) % count;
-                return _voices[index];
+                oldest = i;
+            }
+
+            if ((idle < 0 || _playedAt[i] < _playedAt[idle]) && !_voices[i].IsPlaying)
+            {
+                idle = i;
             }
         }
 
-        var stolen = _voices[_next];
-        _next = (_next + 1) % count;
-        return stolen;
+        var index = idle >= 0 ? idle : oldest;
+        _playedAt[index] = ++_clock;
+        return _voices[index];
     }
 
     /// <summary>Disposes every voice.</summary>

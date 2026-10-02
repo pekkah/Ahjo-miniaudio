@@ -53,13 +53,14 @@ public sealed unsafe class Sound : IDisposable
     }
 
     /// <summary>Creates a stopped sound playing <paramref name="asset"/> on <paramref name="engine"/>.</summary>
+    /// <exception cref="ArgumentException"><see cref="SoundDescription.Group"/> belongs to another engine.</exception>
     /// <exception cref="MiniaudioException">miniaudio could not initialize the sound or its data source.</exception>
     public static Sound Create(AudioEngine engine, SoundAsset asset, in SoundDescription description = default)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentNullException.ThrowIfNull(asset);
         var native = engine.Native;
-        var group = description.Group is null ? null : description.Group.Native;
+        var group = description.Group is null ? null : description.Group.On(engine, nameof(description));
 
         asset.AddReference();
         void* source = null;
@@ -104,15 +105,7 @@ public sealed unsafe class Sound : IDisposable
     {
         if (asset.IsStreamed)
         {
-            var decoder = NativeBlock.Alloc<ma_decoder>();
-            var result = AudioDecoder.Init(asset.Encoded, asset.EncodedSize, default, decoder);
-            if (result != ma_result.MA_SUCCESS)
-            {
-                NativeBlock.Free(decoder);
-                throw new MiniaudioException(result, "ma_decoder_init_memory");
-            }
-
-            return decoder;
+            return AudioDecoder.Open(asset.Encoded, asset.EncodedSize, default, out _, out _);
         }
 
         var buffer = NativeBlock.Alloc<ma_audio_buffer_ref>();
@@ -140,14 +133,13 @@ public sealed unsafe class Sound : IDisposable
 
         if (asset.IsStreamed)
         {
-            Ma.ma_decoder_uninit((ma_decoder*)source);
+            AudioDecoder.Close((ma_decoder*)source);
         }
         else
         {
             Ma.ma_audio_buffer_ref_uninit((ma_audio_buffer_ref*)source);
+            NativeBlock.Free(source);
         }
-
-        NativeBlock.Free(source);
     }
 
     /// <summary>The asset this sound plays.</summary>

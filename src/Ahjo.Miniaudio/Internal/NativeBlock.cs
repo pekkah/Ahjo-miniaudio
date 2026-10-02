@@ -22,5 +22,8 @@ internal static unsafe class NativeBlock
         return p;
     }
 
+    /// <summary>Resizes a block from <see cref="Alloc(nuint)"/>; the contents up to the smaller size are kept, the rest is not cleared.</summary>
+    public static void* Realloc(void* p, nuint size) => NativeMemory.AlignedRealloc(p, size == 0 ? 1 : size, Alignment);
+
     public static void Free(void* p) => NativeMemory.AlignedFree(p);
 }

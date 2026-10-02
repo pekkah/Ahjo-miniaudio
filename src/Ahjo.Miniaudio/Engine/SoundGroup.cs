@@ -26,11 +26,15 @@ public sealed unsafe class SoundGroup : IDisposable
     }
 
     /// <summary>Creates a group on <paramref name="engine"/>, mixed into <paramref name="parent"/> (or the engine's output).</summary>
+    /// <exception cref="ArgumentException"><paramref name="parent"/> belongs to another engine.</exception>
     public static SoundGroup Create(AudioEngine engine, SoundGroup? parent = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
+        var native = engine.Native;
+        var parentNative = parent is null ? null : parent.On(engine, nameof(parent));
+
         var group = NativeBlock.Alloc<ma_sound>();
-        var result = Ma.ma_sound_group_init(engine.Native, 0, parent is null ? null : parent.Native, group);
+        var result = Ma.ma_sound_group_init(native, 0, parentNative, group);
         if (result != ma_result.MA_SUCCESS)
         {
             NativeBlock.Free(group);
@@ -77,6 +81,21 @@ public sealed unsafe class SoundGroup : IDisposable
 
     /// <summary>Pauses the group: every sound in it goes silent, keeping its own state.</summary>
     public void Stop() => MaCheck.ThrowIfFailed(Ma.ma_sound_group_stop(Native), "ma_sound_group_stop");
+
+    /// <summary>
+    /// The native group, checked to belong to <paramref name="engine"/>: a node
+    /// attached across two engines' graphs would be mixed by two audio threads.
+    /// </summary>
+    internal ma_sound* On(AudioEngine engine, string paramName)
+    {
+        var native = Native;
+        if (!ReferenceEquals(_engine, engine))
+        {
+            throw new ArgumentException("The group belongs to a different AudioEngine.", paramName);
+        }
+
+        return native;
+    }
 
     internal ma_sound* Native
     {

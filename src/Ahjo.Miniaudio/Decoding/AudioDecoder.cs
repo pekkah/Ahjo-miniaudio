@@ -51,17 +51,16 @@ public sealed unsafe class AudioDecoder : IDisposable
     {
         description.Validate();
         var data = CopyToNative(encoded);
-        var decoder = NativeBlock.Alloc<ma_decoder>();
-        var result = Init(data, (nuint)encoded.Length, description, decoder);
-        if (result != ma_result.MA_SUCCESS)
+        try
         {
-            NativeBlock.Free(decoder);
-            FreeNative(data);
-            throw new MiniaudioException(result, "ma_decoder_init_memory");
+            var decoder = Open(data, (nuint)encoded.Length, description, out var channels, out var sampleRate);
+            return new AudioDecoder(data, decoder, channels, sampleRate);
         }
-
-        GetFormat(decoder, out var channels, out var sampleRate);
-        return new AudioDecoder(data, decoder, channels, sampleRate);
+        catch
+        {
+            FreeNative(data);
+            throw;
+        }
     }
 
     /// <summary>Decodes all of <paramref name="encoded"/> into a new <see cref="PcmBuffer"/>.</summary>
@@ -76,25 +75,17 @@ public sealed unsafe class AudioDecoder : IDisposable
         }
 
         // The span outlives this call's decoder, so no copy is needed here.
-        var decoder = NativeBlock.Alloc<ma_decoder>();
-        try
+        fixed (byte* data = encoded)
         {
-            fixed (byte* data = encoded)
+            var decoder = Open(data, (nuint)encoded.Length, description, out var channels, out var sampleRate);
+            try
             {
-                MaCheck.ThrowIfFailed(Init(data, (nuint)encoded.Length, description, decoder), "ma_decoder_init_memory");
-                try
-                {
-                    return ReadToEnd(decoder);
-                }
-                finally
-                {
-                    Ma.ma_decoder_uninit(decoder);
-                }
+                return ReadToEnd(decoder, channels, sampleRate);
             }
-        }
-        finally
-        {
-            NativeBlock.Free(decoder);
+            finally
+            {
+                Close(decoder);
+            }
         }
     }
 
@@ -108,14 +99,7 @@ public sealed unsafe class AudioDecoder : IDisposable
     /// Total length in output frames, or 0 when the format cannot report it
     /// without decoding.
     /// </summary>
-    public ulong LengthInFrames
-    {
-        get
-        {
-            ulong length;
-            return Ma.ma_decoder_get_length_in_pcm_frames(Native, &length) == ma_result.MA_SUCCESS ? length : 0;
-        }
-    }
+    public ulong LengthInFrames => Length(Native);
 
     /// <summary>
     /// Decodes up to <c>output.Length / Channels</c> frames into
@@ -126,24 +110,7 @@ public sealed unsafe class AudioDecoder : IDisposable
     {
         var decoder = Native;
         var frames = (ulong)(output.Length / Channels);
-        if (frames == 0)
-        {
-            return 0;
-        }
-
-        ulong read;
-        ma_result result;
-        fixed (float* p = output)
-        {
-            result = Ma.ma_decoder_read_pcm_frames(decoder, p, frames, &read);
-        }
-
-        if (result != ma_result.MA_AT_END)
-        {
-            MaCheck.ThrowIfFailed(result, "ma_decoder_read_pcm_frames");
-        }
-
-        return (int)read;
+        return frames == 0 ? 0 : (int)ReadFrames(decoder, output, frames);
     }
 
     /// <summary>Moves the read position to output frame <paramref name="frame"/>.</summary>
@@ -167,8 +134,7 @@ public sealed unsafe class AudioDecoder : IDisposable
             return;
         }
 
-        Ma.ma_decoder_uninit(_decoder);
-        NativeBlock.Free(_decoder);
+        Close(_decoder);
         FreeNative(_data);
         _decoder = null;
         _data = null;
@@ -188,57 +154,98 @@ public sealed unsafe class AudioDecoder : IDisposable
 
     internal static void FreeNative(byte* data) => NativeMemory.Free(data);
 
-    /// <summary>Initializes an f32 memory decoder. <paramref name="data"/> must outlive it.</summary>
-    internal static ma_result Init(byte* data, nuint size, in AudioDecoderDescription description, ma_decoder* decoder)
+    /// <summary>
+    /// Allocates and initializes an f32 memory decoder over <paramref name="data"/>
+    /// (which must outlive it) and reads its output format. On any failure
+    /// nothing is left allocated. Release with <see cref="Close"/>.
+    /// </summary>
+    internal static ma_decoder* Open(byte* data, nuint size, in AudioDecoderDescription description, out int channels, out int sampleRate)
     {
+        var decoder = NativeBlock.Alloc<ma_decoder>();
         var config = Ma.ma_decoder_config_init(ma_format.ma_format_f32, (uint)description.Channels, (uint)description.SampleRate);
-        return Ma.ma_decoder_init_memory(data, size, &config, decoder);
-    }
-
-    internal static void GetFormat(ma_decoder* decoder, out int channels, out int sampleRate)
-    {
-        ma_format format;
-        uint c, rate;
-        MaCheck.ThrowIfFailed(Ma.ma_decoder_get_data_format(decoder, &format, &c, &rate, null, 0), "ma_decoder_get_data_format");
-        channels = (int)c;
-        sampleRate = (int)rate;
-    }
-
-    private static PcmBuffer ReadToEnd(ma_decoder* decoder)
-    {
-        GetFormat(decoder, out var channels, out var sampleRate);
-
-        // Size from the reported length when the format knows it; otherwise
-        // start at one second and double.
-        ulong capacity;
-        if (Ma.ma_decoder_get_length_in_pcm_frames(decoder, &capacity) != ma_result.MA_SUCCESS || capacity == 0)
+        var result = Ma.ma_decoder_init_memory(data, size, &config, decoder);
+        if (result != ma_result.MA_SUCCESS)
         {
-            capacity = (ulong)sampleRate;
+            NativeBlock.Free(decoder);
+            throw new MiniaudioException(result, "ma_decoder_init_memory");
         }
 
+        ma_format format;
+        uint c, rate;
+        result = Ma.ma_decoder_get_data_format(decoder, &format, &c, &rate, null, 0);
+        if (result != ma_result.MA_SUCCESS)
+        {
+            Close(decoder);
+            throw new MiniaudioException(result, "ma_decoder_get_data_format");
+        }
+
+        channels = (int)c;
+        sampleRate = (int)rate;
+        return decoder;
+    }
+
+    internal static void Close(ma_decoder* decoder)
+    {
+        Ma.ma_decoder_uninit(decoder);
+        NativeBlock.Free(decoder);
+    }
+
+    /// <summary>Total length in output frames, or 0 when the format cannot report it without decoding.</summary>
+    internal static ulong Length(ma_decoder* decoder)
+    {
+        ulong length;
+        return Ma.ma_decoder_get_length_in_pcm_frames(decoder, &length) == ma_result.MA_SUCCESS ? length : 0;
+    }
+
+    private static PcmBuffer ReadToEnd(ma_decoder* decoder, int channels, int sampleRate)
+    {
+        // Size from the reported length when the format knows it (then one
+        // read normally fills it exactly); otherwise start at one second.
+        var length = Length(decoder);
+        var capacity = length != 0 ? length : (ulong)sampleRate;
         var samples = (float*)NativeBlock.Alloc((nuint)PcmBuffer.SampleCount(capacity, channels) * sizeof(float));
         ulong total = 0;
         try
         {
+            // One frame of lookahead: when the buffer is exactly full, probe
+            // for more before growing, so an exactly-sized buffer stays exact.
+            Span<float> probe = stackalloc float[channels];
             while (true)
             {
                 if (total == capacity)
                 {
-                    var grown = capacity * 2;
-                    var bytes = (nuint)PcmBuffer.SampleCount(grown, channels) * sizeof(float);
-                    samples = (float*)NativeMemory.AlignedRealloc(samples, bytes, 64);
+                    if (ReadFrames(decoder, probe, 1) == 0)
+                    {
+                        break;
+                    }
+
+                    // Double, but never past what a PcmBuffer can address.
+                    var limit = (ulong)(int.MaxValue / channels);
+                    var grown = Math.Min(capacity * 2, limit);
+                    if (grown == capacity)
+                    {
+                        throw new InvalidOperationException(
+                            $"The decoded audio exceeds {int.MaxValue} samples, more than a PcmBuffer holds; stream it instead.");
+                    }
+
+                    samples = (float*)NativeBlock.Realloc(samples, (nuint)PcmBuffer.SampleCount(grown, channels) * sizeof(float));
                     capacity = grown;
+                    probe.CopyTo(new Span<float>(samples + (total * (ulong)channels), channels));
+                    total++;
                 }
 
-                ulong read;
-                var result = Ma.ma_decoder_read_pcm_frames(decoder, samples + (total * (ulong)channels), capacity - total, &read);
+                var read = ReadFrames(decoder, new Span<float>(samples + (total * (ulong)channels), (int)((capacity - total) * (ulong)channels)), capacity - total);
                 total += read;
-                if (result == ma_result.MA_AT_END || read == 0)
+                if (read == 0)
                 {
                     break;
                 }
+            }
 
-                MaCheck.ThrowIfFailed(result, "ma_decoder_read_pcm_frames");
+            // A guessed capacity (unknown length) is trimmed to what was decoded.
+            if (total != capacity)
+            {
+                samples = (float*)NativeBlock.Realloc(samples, (nuint)PcmBuffer.SampleCount(total, channels) * sizeof(float));
             }
         }
         catch
@@ -248,5 +255,23 @@ public sealed unsafe class AudioDecoder : IDisposable
         }
 
         return PcmBuffer.Adopt(samples, total, channels, sampleRate);
+    }
+
+    // Reads up to `frames` frames; 0 at the end.
+    private static ulong ReadFrames(ma_decoder* decoder, Span<float> destination, ulong frames)
+    {
+        ulong read;
+        ma_result result;
+        fixed (float* p = destination)
+        {
+            result = Ma.ma_decoder_read_pcm_frames(decoder, p, frames, &read);
+        }
+
+        if (result != ma_result.MA_AT_END)
+        {
+            MaCheck.ThrowIfFailed(result, "ma_decoder_read_pcm_frames");
+        }
+
+        return read;
     }
 }

@@ -78,6 +78,10 @@ public readonly record struct AudioEngineDescription
 /// (the game thread). Creating and disposing objects is setup-time work.</para>
 /// <para><see cref="Dispose"/> first disposes every sound and group still
 /// alive on the engine, newest first.</para>
+/// <para><b>Dispose it.</b> An engine's device plays until it is disposed,
+/// and an engine with a <see cref="AudioEngineDescription.DeviceObserver"/>
+/// is kept reachable by its device (through a GC handle) until then, so a
+/// forgotten engine is never collected.</para>
 /// </remarks>
 public sealed unsafe class AudioEngine : IDisposable
 {
@@ -92,6 +96,10 @@ public sealed unsafe class AudioEngine : IDisposable
     private GCHandle<AudioEngine> _self;
     private ma_engine* _engine;
     private Exception? _fault;
+
+    // Reads in flight on another thread (a device's audio thread pulling a
+    // NoDevice engine). Dispose waits for it to drain before freeing.
+    private int _readers;
 
     private AudioEngine(in AudioEngineDescription description)
     {
@@ -235,10 +243,27 @@ public sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>Starts the engine's device.</summary>
-    public void Start() => MaCheck.ThrowIfFailed(Ma.ma_engine_start(Native), "ma_engine_start");
+    /// <exception cref="InvalidOperationException">The engine has no device (<see cref="AudioEngineDescription.NoDevice"/>).</exception>
+    public void Start() => MaCheck.ThrowIfFailed(Ma.ma_engine_start(DeviceEngine(nameof(Start))), "ma_engine_start");
 
     /// <summary>Stops the engine's device; sounds keep their state and resume on <see cref="Start"/>.</summary>
-    public void Stop() => MaCheck.ThrowIfFailed(Ma.ma_engine_stop(Native), "ma_engine_stop");
+    /// <exception cref="InvalidOperationException">The engine has no device (<see cref="AudioEngineDescription.NoDevice"/>).</exception>
+    public void Stop() => MaCheck.ThrowIfFailed(Ma.ma_engine_stop(DeviceEngine(nameof(Stop))), "ma_engine_stop");
+
+    // miniaudio answers a deviceless start/stop with MA_INVALID_OPERATION,
+    // which would surface as a MiniaudioException — a native failure — for
+    // what is a caller error.
+    private ma_engine* DeviceEngine(string member)
+    {
+        var engine = Native;
+        if (_noDevice)
+        {
+            throw new InvalidOperationException(
+                $"{member} controls the engine's own device; a NoDevice engine plays when its AudioDevice is started.");
+        }
+
+        return engine;
+    }
 
     /// <summary>
     /// Mixes <c>output.Length / Channels</c> frames into <paramref name="output"/>
@@ -249,7 +274,6 @@ public sealed unsafe class AudioEngine : IDisposable
     /// <exception cref="ArgumentException"><paramref name="output"/> is not a whole number of frames.</exception>
     public void Read(Span<float> output)
     {
-        var engine = Native;
         if (!_noDevice)
         {
             throw new InvalidOperationException("The engine plays on its own device; Read is only for an engine created with NoDevice.");
@@ -260,9 +284,22 @@ public sealed unsafe class AudioEngine : IDisposable
             throw new ArgumentException($"{output.Length} samples is not a whole number of {Channels}-channel frames.", nameof(output));
         }
 
-        fixed (float* p = output)
+        // Announce the read before looking at _engine (the increment is a
+        // full fence). Dispose clears _engine, fences, then waits for
+        // _readers to drain — so either this read sees the engine disposed,
+        // or Dispose waits for it to finish before freeing anything.
+        Interlocked.Increment(ref _readers);
+        try
         {
-            MaCheck.ThrowIfFailed(Ma.ma_engine_read_pcm_frames(engine, p, (ulong)(output.Length / Channels), null), "ma_engine_read_pcm_frames");
+            var engine = Native;
+            fixed (float* p = output)
+            {
+                MaCheck.ThrowIfFailed(Ma.ma_engine_read_pcm_frames(engine, p, (ulong)(output.Length / Channels), null), "ma_engine_read_pcm_frames");
+            }
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _readers);
         }
     }
 
@@ -283,13 +320,17 @@ public sealed unsafe class AudioEngine : IDisposable
     /// Disposes every sound and group on the engine, then the engine and its device.
     /// </summary>
     /// <remarks>
-    /// A <see cref="AudioEngineDescription.NoDevice"/> engine must not be
-    /// disposed while a device's renderer can still <see cref="Read"/> it:
-    /// dispose (or stop) that device first.
+    /// Safe while another thread is inside <see cref="Read"/> (a device
+    /// pulling a <see cref="AudioEngineDescription.NoDevice"/> engine): it
+    /// waits for that read to finish, and later reads throw
+    /// <see cref="ObjectDisposedException"/>, which an <see cref="AudioDevice"/>
+    /// latches into its <see cref="AudioDevice.Fault"/> and answers with
+    /// silence. Disposing the device first avoids that fault.
     /// </remarks>
     public void Dispose()
     {
-        if (_engine == null)
+        var engine = _engine;
+        if (engine == null)
         {
             return;
         }
@@ -297,11 +338,19 @@ public sealed unsafe class AudioEngine : IDisposable
         _children.DisposeAll();
         _context?.Unregister(_registration);
 
+        // Unpublish, then drain the readers that got in before (see Read).
+        _engine = null;
+        Interlocked.MemoryBarrier();
+        var spin = default(SpinWait);
+        while (Volatile.Read(ref _readers) != 0)
+        {
+            spin.SpinOnce();
+        }
+
         // Uninit stops the device, which still delivers Stopped through the
         // handle, so the handle must outlive it.
-        Ma.ma_engine_uninit(_engine);
-        NativeBlock.Free(_engine);
-        _engine = null;
+        Ma.ma_engine_uninit(engine);
+        NativeBlock.Free(engine);
         if (_self.IsAllocated)
         {
             _self.Dispose();
