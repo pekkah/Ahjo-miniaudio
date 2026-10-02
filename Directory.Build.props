@@ -39,9 +39,15 @@
     Package metadata shared by all publishable projects.
 
     Nothing is packable unless the project explicitly opts in with
-    <IsPackable>true</IsPackable> + <PackageId>. Today that is only
-    src/Ahjo.Miniaudio.Native; src/Ahjo.Miniaudio opts in once it has a
-    surface worth shipping.
+    <IsPackable>true</IsPackable>. Each src/ project carries its own
+    PackageId, Title, Description and PackageTags; everything identical
+    across packages lives here. Today only src/Ahjo.Miniaudio.Native packs;
+    src/Ahjo.Miniaudio has its metadata in place and flips IsPackable once it
+    has a surface worth shipping.
+
+    Version: MinVer derives it from `v*` git tags + commit height (each
+    packable project references the MinVer package); publish.yml can
+    override it with MinVerVersionOverride.
   -->
   <PropertyGroup>
     <IsPackable>false</IsPackable>
@@ -61,6 +67,10 @@
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
     <Deterministic>true</Deterministic>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <NeutralLanguage>en</NeutralLanguage>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
   </PropertyGroup>
 
   <!--

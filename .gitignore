@@ -184,22 +184,6 @@ builddir/
 subprojects/packagecache/
 
 # ---------------------------------------------------------------------------
-# Vulkan / GPU / shaders
-# ---------------------------------------------------------------------------
-# Compiled SPIR-V (treat as build output by default; un-ignore in /assets if
-# you ship precompiled shaders).
-*.spv
-!assets/shaders/**/*.spv
-!resources/shaders/**/*.spv
-
-# Vulkan validation / pipeline caches and dumps
-vk_layer_settings.txt
-*.pipeline_cache
-shader_dump/
-RenderDoc/
-*.rdc
-
-# ---------------------------------------------------------------------------
 # Secrets / local config (never commit)
 # ---------------------------------------------------------------------------
 *.pfx

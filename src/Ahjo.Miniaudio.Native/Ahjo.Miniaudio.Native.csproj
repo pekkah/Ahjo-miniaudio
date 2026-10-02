@@ -26,9 +26,7 @@
     <PackageId>Ahjo.Miniaudio.Native</PackageId>
     <Title>Ahjo.Miniaudio.Native</Title>
     <Description>Raw P/Invoke bindings for miniaudio ($(MiniaudioVersion)). 1:1 with miniaudio.h. Ships the native runtime binary for Windows x64.</Description>
-    <PackageTags>audio;miniaudio;sound;interop;native;pinvoke;bindings</PackageTags>
-    <MinVerTagPrefix>v</MinVerTagPrefix>
-    <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
+    <PackageTags>audio;miniaudio;sound;playback;interop;native;pinvoke;bindings</PackageTags>
   </PropertyGroup>
 
   <!--

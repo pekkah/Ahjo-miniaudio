@@ -7,11 +7,26 @@
   </PropertyGroup>
 
   <!--
-    Idiomatic, low-allocation wrapper over Ahjo.Miniaudio.Native for the Ahjo
-    game engine. Not packable yet: it opts in (IsPackable + PackageId +
-    MinVer, mirroring Ahjo.Miniaudio.Native.csproj) once it has a surface
-    worth shipping.
+    Published as "Ahjo.Miniaudio" on NuGet: the idiomatic, low-allocation
+    wrapper over Ahjo.Miniaudio.Native for the Ahjo game engine.
+
+    Metadata is complete, but IsPackable stays false until there is a surface
+    worth shipping — publish.yml pushes on every commit to main, and an empty
+    package on nuget.org cannot be taken back. To ship it: set IsPackable to
+    true and add a pack step to publish.yml after the Native one.
   -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <PackageId>Ahjo.Miniaudio</PackageId>
+    <Title>Ahjo.Miniaudio</Title>
+    <Description>Idiomatic, low-allocation .NET wrapper for miniaudio, built for the Ahjo game engine. Native AOT compatible.</Description>
+    <PackageTags>audio;miniaudio;sound;playback;gamedev;game-engine;ahjo</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" PrivateAssets="all" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Ahjo.Miniaudio.Native\Ahjo.Miniaudio.Native.csproj" />
