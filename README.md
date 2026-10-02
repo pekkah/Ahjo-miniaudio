@@ -21,13 +21,15 @@ dotnet test
 
 ## Sample
 
-`samples/HelloAudio` shows the library in use: engine setup, a generated tone
-driven from a game-style loop (pan + pitch), and streaming a WAV/FLAC/MP3 file.
+`samples/HelloAudio` shows the wrapper in use: engine setup, a generated tone
+driven from a game-style loop (pan + pitch), streaming a WAV/FLAC/MP3 file, and
+an engine pulled through a caller-owned `AudioDevice` render callback.
 
 ```bash
 dotnet run --project samples/HelloAudio                  # 440 Hz tone, panning left -> right
 dotnet run --project samples/HelloAudio -- music.flac    # stream a file to the end
 dotnet run --project samples/HelloAudio -- --null        # no speakers: miniaudio's null backend
+dotnet run --project samples/HelloAudio -- --pull        # the engine mixed from an AudioDevice callback
 ```
 
 It also serves as the Native AOT check:

@@ -43,6 +43,10 @@ jobs:
         run: |
           samples/HelloAudio/bin/Release/net11.0/win-x64/publish/HelloAudio.exe --null
           if ($LASTEXITCODE -ne 0) { throw "HelloAudio exited with code $LASTEXITCODE" }
+          # --pull plays the engine through an AudioDevice: the unmanaged
+          # render callback running on miniaudio's thread, under AOT.
+          samples/HelloAudio/bin/Release/net11.0/win-x64/publish/HelloAudio.exe --null --pull
+          if ($LASTEXITCODE -ne 0) { throw "HelloAudio --pull exited with code $LASTEXITCODE" }
 
   # The shippable per-RID binaries, built and smoke-tested by the same
   # reusable workflow publish.yml uses.

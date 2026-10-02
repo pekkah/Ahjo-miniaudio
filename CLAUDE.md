@@ -30,7 +30,9 @@ Whichever is chosen, a new RID lands as: CI lane with passing `LayoutTests` on t
 ```
 src/
   Ahjo.Miniaudio.Native/   ClangSharp P/Invokes against miniaudio.h (class `Ma`, library `ahjo_miniaudio`) + the host-RID native build
-  Ahjo.Miniaudio/          idiomatic wrapper for Ahjo (not packed yet)
+  Ahjo.Miniaudio/          idiomatic wrapper for Ahjo (not packed yet): Devices/ (context, device,
+                           render callback), Decoding/ (decoder, PcmBuffer), Engine/ (engine, sounds,
+                           groups, pools, listener); design in docs/design/specs/*issue-02*
 native/
   miniaudio/include/       miniaudio.h at the pinned tag — committed, the generator input of record
   miniaudio/src/           ahjo_miniaudio.c: the single TU (implementation + sizeof oracle)
@@ -42,6 +44,7 @@ tests/
   Ahjo.Miniaudio.Native.Tests/   version pin, layout oracle, null-backend context + device
   Ahjo.Miniaudio.Tests/          wrapper tests
 tools/generate-miniaudio.rsp     ClangSharp configuration
+docs/design/                     specs/ (what + why) and plans/ (how), named YYYY-MM-DD-issue-NN-<topic>
 ```
 
 Gitignored, never edit: `native/miniaudio/downloaded/`, `native/miniaudio/build/`, `native/miniaudio/staged/`.
