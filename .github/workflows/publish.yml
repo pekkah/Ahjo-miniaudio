@@ -9,8 +9,12 @@ name: Publish
 #   workflow_dispatch  → manual. `release=false` packs without pushing
 #                        (artifact-only dry-run); `version` forces a version.
 #
-# Pushing requires the NUGET_KEY repository secret; without it the push step
-# is skipped and the packages are still built and uploaded as artifacts.
+# Pushing to NuGet.org is OFF until explicitly enabled. It needs BOTH:
+#   - the repository variable NUGET_PUBLISH set to `true`
+#     (gh variable set NUGET_PUBLISH --body true), and
+#   - the NUGET_KEY repository secret.
+# Until then every trigger still builds, tests and packs, and uploads the
+# packages as the `nuget-packages` workflow artifact — nothing leaves GitHub.
 
 on:
   push:
@@ -102,7 +106,7 @@ jobs:
           if-no-files-found: error
 
       - name: Push to NuGet.org
-        if: env.NUGET_KEY != '' && (github.event_name != 'workflow_dispatch' || inputs.release == true)
+        if: vars.NUGET_PUBLISH == 'true' && env.NUGET_KEY != '' && (github.event_name != 'workflow_dispatch' || inputs.release == true)
         run: >-
           dotnet nuget push "${{ github.workspace }}/artifacts/*.nupkg"
           --api-key "$NUGET_KEY"

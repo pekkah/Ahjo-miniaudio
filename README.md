@@ -36,8 +36,9 @@ dotnet build Ahjo.Miniaudio.slnx && dotnet test
 
 `.github/workflows/publish.yml` publishes a preview package on every push to `main`
 and a stable one when a GitHub Release is published on a `v*` tag (versions come
-from [MinVer](https://github.com/adamralph/minver)). Pushing to NuGet.org needs the
-`NUGET_KEY` repository secret.
+from [MinVer](https://github.com/adamralph/minver)). Pushing to NuGet.org is off
+until the `NUGET_PUBLISH` repository variable is `true` **and** the `NUGET_KEY`
+secret is set; until then packages are only uploaded as workflow artifacts.
 
 ## License
 
