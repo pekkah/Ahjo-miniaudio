@@ -98,6 +98,18 @@ jobs:
           -p:SkipMiniaudioNativeBuild=true
           -o "${{ github.workspace }}/artifacts"
 
+      # The wrapper. Its ProjectReference builds the Native project again, so
+      # it needs the same skip; pack turns that reference into a dependency
+      # on Ahjo.Miniaudio.Native at this same version.
+      - name: Pack wrapper
+        env:
+          MinVerVersionOverride: ${{ inputs.version }}
+        run: >-
+          dotnet pack src/Ahjo.Miniaudio/Ahjo.Miniaudio.csproj
+          -c Release
+          -p:SkipMiniaudioNativeBuild=true
+          -o "${{ github.workspace }}/artifacts"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
