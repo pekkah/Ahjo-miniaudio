@@ -4,19 +4,22 @@
     <RootNamespace>Ahjo.Miniaudio</RootNamespace>
     <AssemblyName>Ahjo.Miniaudio</AssemblyName>
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- Ship the XML docs in the package: the API's contracts (threading,
+         allocation, lifetime) live in them. Every public member must carry
+         one; CS1591 is an error under TreatWarningsAsErrors. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <!--
     Published as "Ahjo.Miniaudio" on NuGet: the idiomatic, low-allocation
     wrapper over Ahjo.Miniaudio.Native for the Ahjo game engine.
 
-    Metadata is complete, but IsPackable stays false until there is a surface
-    worth shipping — publish.yml pushes on every commit to main, and an empty
-    package on nuget.org cannot be taken back. To ship it: set IsPackable to
-    true and add a pack step to publish.yml after the Native one.
+    publish.yml packs it right after the Native package. The ProjectReference
+    below becomes a NuGet dependency on Ahjo.Miniaudio.Native at the same
+    MinVer version, so the two always ship as a matched pair.
   -->
   <PropertyGroup>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
     <PackageId>Ahjo.Miniaudio</PackageId>
     <Title>Ahjo.Miniaudio</Title>
     <Description>Idiomatic, low-allocation .NET wrapper for miniaudio, built for the Ahjo game engine. Native AOT compatible.</Description>

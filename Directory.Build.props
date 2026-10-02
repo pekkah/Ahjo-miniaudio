@@ -41,9 +41,9 @@
     Nothing is packable unless the project explicitly opts in with
     <IsPackable>true</IsPackable>. Each src/ project carries its own
     PackageId, Title, Description and PackageTags; everything identical
-    across packages lives here. Today only src/Ahjo.Miniaudio.Native packs;
-    src/Ahjo.Miniaudio has its metadata in place and flips IsPackable once it
-    has a surface worth shipping.
+    across packages lives here. Both src/ projects pack: Ahjo.Miniaudio.Native
+    (bindings + per-RID binary) and Ahjo.Miniaudio (the wrapper, which
+    depends on the Native package at the same version).
 
     Version: MinVer derives it from `v*` git tags + commit height (each
     packable project references the MinVer package); publish.yml can

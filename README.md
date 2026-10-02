@@ -6,7 +6,7 @@ built for the Ahjo game engine. Targets .NET 11.
 | Package | What it is | Status |
 | --- | --- | --- |
 | `Ahjo.Miniaudio.Native` | Raw P/Invoke bindings generated from `miniaudio.h` + the `ahjo_miniaudio` native binary | win-x64 |
-| `Ahjo.Miniaudio` | Idiomatic wrapper | in development, not published |
+| `Ahjo.Miniaudio` | Idiomatic wrapper: device, decoder and engine tiers | preview, win-x64 |
 
 ## Building
 
