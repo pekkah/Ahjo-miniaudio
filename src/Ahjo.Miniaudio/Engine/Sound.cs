@@ -158,6 +158,12 @@ public sealed unsafe class Sound : IDisposable
     /// stopped with <see cref="StopWithFade"/> is audible again), rewinds,
     /// and starts. What a one-shot effect calls.
     /// </summary>
+    /// <remarks>
+    /// Because it clears the fade, a <see cref="Fade"/> set before
+    /// <c>Play</c> is lost, and one set after it can miss the first period.
+    /// To fade a sound in, call <see cref="Fade"/> and then <see cref="Start"/>
+    /// (after <see cref="Seek"/>(0) if it has played before).
+    /// </remarks>
     public void Play()
     {
         var sound = Native;

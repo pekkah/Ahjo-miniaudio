@@ -47,8 +47,10 @@ one. When `noDevice` is set, `ma_engine_init` requires explicit `channels` and
 
 ### E2. Ahjo loads assets as bytes, not paths
 
-Ahjo has no VFS. Loaders read whole files and decode from spans, for example
-`ImageAssetLoader` and `KtxNativeImage.TryOpen(ReadOnlySpan<byte>, …)` in `src/Ahjo.Assets/`.
+Ahjo has no VFS. Loaders read whole files and decode from spans: `ImageAssetLoader.Load`
+calls `File.ReadAllBytes` (`src/Ahjo.Assets/ImageAssetLoader.cs:110`), and
+`KtxNativeImage.TryOpen(ReadOnlySpan<byte>, …)` decodes from the span
+(`src/Ahjo.Assets/KtxNativeImage.cs:52`).
 `ma_decoder_init_memory` (`miniaudio.h:10038`) fits that model. It does **not** copy:
 the bytes must outlive the decoder.
 

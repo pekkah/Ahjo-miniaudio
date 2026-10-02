@@ -108,6 +108,8 @@ internal static class Program
         using var tone = SoundAsset.FromPcm(pcm);
         using var sound = Sound.Create(engine, tone, new SoundDescription { Looping = true });
 
+        // Fade, then Start: Play() would clear the fade (it resets a sound
+        // for a fresh one-shot), and a new sound is already at frame 0.
         sound.Fade(0, 1, TimeSpan.FromMilliseconds(250));
         sound.Start();
 

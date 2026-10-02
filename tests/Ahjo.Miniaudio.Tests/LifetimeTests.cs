@@ -98,7 +98,7 @@ public class LifetimeTests
     }
 
     [Fact]
-    public void FailedSoundCreationReleasesTheAsset()
+    public void DisposedGroupIsRejectedAndTheAssetStaysUsable()
     {
         using var engine = TestAudio.PullEngine();
         var asset = TestAudio.ConstantAsset(480);
@@ -107,8 +107,8 @@ public class LifetimeTests
 
         Assert.Throws<ObjectDisposedException>(() => Sound.Create(engine, asset, new SoundDescription { Group = group }));
 
-        // Had the failed create kept a reference, this sound's dispose would
-        // not be the last one; either way nothing may crash.
+        // The rejected create took no asset reference: this sound's is the
+        // last one, so its dispose frees the PCM.
         var sound = Sound.Create(engine, asset);
         asset.Dispose();
         sound.Dispose();
