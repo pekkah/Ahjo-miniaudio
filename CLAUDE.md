@@ -7,9 +7,10 @@
 1. **Generated code is generated.** Never hand-edit `src/Ahjo.Miniaudio.Native/Generated/`. Edit `tools/generate-miniaudio.rsp` (or `MiniaudioDefines`) and regenerate (`/regen-bindings`). Hand-written additions to the Native project go in a sibling `Manual/` folder.
 2. **One define list, two consumers.** `MiniaudioDefines` in `Directory.Build.props` is passed to both cmake and ClangSharp. Never add a struct-shaping `MA_*` define to only `CMakeLists.txt` or only the rsp — the bindings would silently disagree with the binary about `sizeof`.
 3. **`LayoutTests` is the oracle.** It compares every listed generated struct against the C compiler's `sizeof` via the `ahjo_ma_sizeof_*` exports in `native/miniaudio/src/ahjo_miniaudio.c`. A failure there is a real layout bug: never change the expected value to make it pass. When the wrapper starts allocating a new miniaudio type, add it to both lists.
-4. **Native AOT stays clean** — `IsAotCompatible=true` on `src/` projects; no reflection discovery or dynamic codegen reachable from the wrapper.
+4. **Native AOT stays clean** — `IsAotCompatible=true` on `src/` projects; no reflection discovery or dynamic codegen reachable from the wrapper. CI publishes `samples/HelloAudio` with `PublishAot=true` and runs it on the null backend.
 5. **Zero per-frame allocations** on anything the audio thread or a game frame calls (data callbacks, sound playback control, listener/spatial updates). Setup-time allocation is fine.
 6. **`TreatWarningsAsErrors=true`** with `AnalysisLevel=latest`. Fix the diagnostic; don't `#pragma` it away.
+7. **The sample tracks the public API.** When the wrapper gains a feature, `samples/HelloAudio` moves from the raw `Ma.*` calls to it — the sample is the first consumer and shows the intended usage.
 
 ## Platform layouts (why only win-x64 ships)
 
@@ -33,6 +34,8 @@ native/
   miniaudio/src/           ahjo_miniaudio.c: the single TU (implementation + sizeof oracle)
   miniaudio/CMakeLists.txt shared library; MA_DLL exports, static MSVC CRT
   stubs/                   parse-time libc shims so codegen needs no system toolchain
+samples/
+  HelloAudio/              usage tour (tone + file playback); also the Native AOT publish check in CI
 tests/
   Ahjo.Miniaudio.Native.Tests/   version pin, layout oracle, null-backend context + device
   Ahjo.Miniaudio.Tests/          wrapper tests

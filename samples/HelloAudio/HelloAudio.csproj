@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>HelloAudio</RootNamespace>
+    <AssemblyName>HelloAudio</AssemblyName>
+    <!-- The sample doubles as the Native AOT check: CI publishes it with
+         PublishAot=true, so trim/AOT warnings in anything it reaches fail
+         the build. -->
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ahjo.Miniaudio\Ahjo.Miniaudio.csproj" />
+  </ItemGroup>
+
+</Project>

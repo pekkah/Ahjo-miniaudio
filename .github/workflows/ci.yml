@@ -31,6 +31,19 @@ jobs:
       - name: Test
         run: dotnet test --solution Ahjo.Miniaudio.slnx -c Release --no-build
 
+      # The sample is the Native AOT check: publishing with PublishAot=true
+      # turns any trim/AOT warning reachable from the libraries into a build
+      # failure. Running the published exe on the null backend then proves the
+      # AOT binary and the copied ahjo_miniaudio.dll actually play audio.
+      - name: AOT publish — HelloAudio
+        run: dotnet publish samples/HelloAudio/HelloAudio.csproj -c Release -r win-x64
+
+      - name: AOT run — HelloAudio (null backend)
+        shell: pwsh
+        run: |
+          samples/HelloAudio/bin/Release/net11.0/win-x64/publish/HelloAudio.exe --null
+          if ($LASTEXITCODE -ne 0) { throw "HelloAudio exited with code $LASTEXITCODE" }
+
   # The shippable per-RID binaries, built and smoke-tested by the same
   # reusable workflow publish.yml uses.
   native:

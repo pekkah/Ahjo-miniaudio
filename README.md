@@ -19,6 +19,20 @@ dotnet build Ahjo.Miniaudio.slnx   # builds ahjo_miniaudio for the host via cmak
 dotnet test
 ```
 
+## Sample
+
+`samples/HelloAudio` shows the library in use: engine setup, a generated tone
+driven from a game-style loop (pan + pitch), and streaming a WAV/FLAC/MP3 file.
+
+```bash
+dotnet run --project samples/HelloAudio                  # 440 Hz tone, panning left -> right
+dotnet run --project samples/HelloAudio -- music.flac    # stream a file to the end
+dotnet run --project samples/HelloAudio -- --null        # no speakers: miniaudio's null backend
+```
+
+It also serves as the Native AOT check:
+`dotnet publish samples/HelloAudio -c Release -r win-x64`.
+
 ## Regenerating the bindings
 
 The miniaudio version is pinned by `MiniaudioVersion` in `Directory.Build.props`.
