@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Ahjo.Miniaudio</RootNamespace>
+    <AssemblyName>Ahjo.Miniaudio</AssemblyName>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <!--
+    Idiomatic, low-allocation wrapper over Ahjo.Miniaudio.Native for the Ahjo
+    game engine. Not packable yet: it opts in (IsPackable + PackageId +
+    MinVer, mirroring Ahjo.Miniaudio.Native.csproj) once it has a surface
+    worth shipping.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ahjo.Miniaudio.Native\Ahjo.Miniaudio.Native.csproj" />
+  </ItemGroup>
+
+</Project>

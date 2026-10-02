@@ -1,0 +1,46 @@
+--file
+native/miniaudio/include/miniaudio.h
+# Parse-time libc shims (stddef/stdint/stdarg) so no system C toolchain is
+# needed to regenerate.
+--include-directory
+native/stubs
+--include-directory
+native/miniaudio/include
+--namespace
+Ahjo.Miniaudio.Native
+--methodClassName
+Ma
+--libraryPath
+ahjo_miniaudio
+--output
+src/Ahjo.Miniaudio.Native/Generated
+--output-mode
+CSharp
+# Parse for a fixed target so the output is a function of the pinned header
+# alone, not of the machine that ran the regen. It must be the target of the
+# binaries we ship: miniaudio's runtime-state structs (ma_context, ma_device,
+# ma_mutex, ...) are laid out differently per platform, and LayoutTests holds
+# this choice to the compiler's own sizeof. See CLAUDE.md, "Platform layouts".
+--additional
+--target=x86_64-pc-windows-msvc
+--language
+c
+--std
+c11
+--config
+latest-codegen
+generate-helper-types
+generate-file-scoped-namespaces
+generate-unmanaged-constants
+generate-disable-runtime-marshalling
+generate-aggressive-inlining
+exclude-enum-operators
+multi-file
+# strip-enum-member-type-name stays OFF on purpose: enum members keep their C
+# names (ma_format.ma_format_f32), which keeps the bindings 1:1 with the
+# header and avoids identifiers that would start with a digit
+# (ma_standard_sample_rate_48000).
+--remap
+size_t=nuint
+--with-access-specifier
+*=public

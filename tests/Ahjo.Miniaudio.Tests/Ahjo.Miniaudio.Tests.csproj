@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Ahjo.Miniaudio.Tests</RootNamespace>
+    <AssemblyName>Ahjo.Miniaudio.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ahjo.Miniaudio\Ahjo.Miniaudio.csproj" />
+  </ItemGroup>
+
+  <!-- The pin the loaded binary must report; see MiniaudioLibraryTests. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="MiniaudioVersion" Value="$(MiniaudioVersion)" />
+  </ItemGroup>
+
+</Project>

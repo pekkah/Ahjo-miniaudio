@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Ahjo.Miniaudio.Native.Tests</RootNamespace>
+    <AssemblyName>Ahjo.Miniaudio.Native.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ahjo.Miniaudio.Native\Ahjo.Miniaudio.Native.csproj" />
+  </ItemGroup>
+
+  <!-- The pin the loaded binary must report; see NativeSmokeTests. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="MiniaudioVersion" Value="$(MiniaudioVersion)" />
+  </ItemGroup>
+
+</Project>

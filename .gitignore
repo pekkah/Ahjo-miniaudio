@@ -1,0 +1,258 @@
+# ---------------------------------------------------------------------------
+# .NET / MSBuild
+# ---------------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]uild/
+[Bb]uilds/
+[Pp]ublish/
+[Pp]ublishProfiles/
+[Pp]ackages/
+!**/[Pp]ackages/build/
+
+# Roslyn cache
+*.cache
+*.VC.db
+*.VC.VC.opendb
+
+# Build results
+[Aa][Rr][Mm]64/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# MSBuild diagnostic logs
+*.binlog
+
+# .NET tooling / restore
+.dotnet/
+.nuget/
+*.nuget.props
+*.nuget.targets
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# Test results / coverage
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+TestResult.xml
+*.trx
+BenchmarkDotNet.Artifacts/
+
+# AOT / publish output that may slip in
+*.runtimeconfig.dev.json
+*.deps.json
+PublishProfiles/
+
+# ---------------------------------------------------------------------------
+# Visual Studio / Rider / VS Code
+# ---------------------------------------------------------------------------
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.history/
+.ionide/
+
+# Rider / ReSharper
+.idea/
+*.sln.iml
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# Visual Studio user-specific
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.rsuser
+*.svclog
+*.scc
+
+# Visual Studio project files generated artifacts
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.VisualState.xml
+*.opendb
+*.tlog
+*.pgc
+*.pgd
+
+# ---------------------------------------------------------------------------
+# Native / C / C++ build artifacts
+# ---------------------------------------------------------------------------
+*.o
+*.obj
+*.lo
+*.slo
+*.ko
+*.a
+*.la
+*.lai
+*.dSYM/
+*.exp
+*.idb
+*.ilk
+*.pdb
+*.map
+*.gcda
+*.gcno
+*.gcov
+*.profdata
+*.profraw
+
+# Compiled (native) libraries — not ignored under runtimes/ where vendored
+# native binaries are often committed for cross-platform shipping.
+*.dll
+*.so
+*.so.*
+*.dylib
+*.exe
+!runtimes/**/*.dll
+!runtimes/**/*.so
+!runtimes/**/*.so.*
+!runtimes/**/*.dylib
+!native/**/lib/**/*.dll
+!native/**/lib/**/*.so
+!native/**/lib/**/*.so.*
+!native/**/lib/**/*.dylib
+!third_party/**/lib/**/*.dll
+!third_party/**/lib/**/*.so
+!third_party/**/lib/**/*.so.*
+!third_party/**/lib/**/*.dylib
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+CMakeUserPresets.json
+cmake-build-*/
+cmake_install.cmake
+install_manifest.txt
+Testing/
+compile_commands.json
+.cmake/
+
+# Ninja / Make
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+Makefile
+!**/cmake/**/Makefile
+!**/scripts/**/Makefile
+
+# vcpkg
+vcpkg_installed/
+.vcpkg-root
+
+# Conan
+conan.lock
+conanbuildinfo.*
+conaninfo.txt
+graph_info.json
+conan_paths.cmake
+
+# Meson
+builddir/
+subprojects/packagecache/
+
+# ---------------------------------------------------------------------------
+# Vulkan / GPU / shaders
+# ---------------------------------------------------------------------------
+# Compiled SPIR-V (treat as build output by default; un-ignore in /assets if
+# you ship precompiled shaders).
+*.spv
+!assets/shaders/**/*.spv
+!resources/shaders/**/*.spv
+
+# Vulkan validation / pipeline caches and dumps
+vk_layer_settings.txt
+*.pipeline_cache
+shader_dump/
+RenderDoc/
+*.rdc
+
+# ---------------------------------------------------------------------------
+# Secrets / local config (never commit)
+# ---------------------------------------------------------------------------
+*.pfx
+*.snk
+*.key
+*.pem
+secrets.json
+appsettings.*.Local.json
+appsettings.Development.local.json
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# OS / editor cruft
+# ---------------------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*.swo
+*~
+
+# Tooling caches
+.tool-versions
+.direnv/
+.cache/
+node_modules/
+
+# Claude Code: ignore personal state, track team-shared agents/skills/settings.
+.claude/*
+!.claude/agents/
+!.claude/skills/
+!.claude/settings.json
+
+# ---------------------------------------------------------------------------
+# Project-specific
+# ---------------------------------------------------------------------------
+
+# Fetched miniaudio release archive — refetched by the Regenerate target.
+# native/miniaudio/include/miniaudio.h is the generator input of record and is
+# committed, so a normal build never touches the network.
+native/miniaudio/downloaded/
+
+# cmake scratch tree for the ahjo_miniaudio shared library, per RID.
+native/miniaudio/build/
+
+# Per-RID ahjo_miniaudio binaries: built locally by BuildMiniaudioForHost,
+# downloaded from the CI matrix before pack. Never committed — the
+# "!native/**/lib/**" un-ignore rules above exist for VENDORED binaries, and
+# these are built, which is also why this directory is not called lib.
+native/miniaudio/staged/

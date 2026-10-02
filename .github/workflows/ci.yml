@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  # Whole solution: wrapper + native suites. Every test uses miniaudio's null
+  # backend, so the hosted runner's lack of an audio device costs no coverage.
+  build-test:
+    name: Build & Test (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build (Release)
+        run: dotnet build Ahjo.Miniaudio.slnx -c Release
+
+      - name: Test
+        run: dotnet test --solution Ahjo.Miniaudio.slnx -c Release --no-build
+
+  # The shippable per-RID binaries, built and smoke-tested by the same
+  # reusable workflow publish.yml uses.
+  native:
+    name: miniaudio native
+    uses: ./.github/workflows/build-miniaudio-native.yml

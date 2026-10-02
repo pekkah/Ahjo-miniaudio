@@ -1,0 +1,76 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <LangVersion>15.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Pinned miniaudio release tag (upstream tags carry no 'v' prefix).
+         Bump deliberately: native/miniaudio/include/miniaudio.h and the
+         generated bindings are both committed, so a bump is
+         `dotnet build src/Ahjo.Miniaudio.Native -t:Regenerate` followed by a
+         review of the diff. Ahjo.Miniaudio.Native.Tests asserts that the
+         loaded library reports exactly this version.
+         See https://github.com/mackron/miniaudio/releases. -->
+    <MiniaudioVersion>0.11.25</MiniaudioVersion>
+    <!-- Preprocessor defines applied to BOTH the native compile (cmake) and
+         the binding generator (ClangSharp), defined once here so they cannot
+         drift. Several MA_NO_* / MA_ENABLE_* switches change public struct
+         bodies; a define that reaches one side and not the other ships
+         bindings whose sizeof disagrees with the binary — silent memory
+         corruption, not a build error. Semicolon-separated, e.g.
+         `MA_NO_ENCODING;MA_NO_GENERATION`. Changing this requires a regen.
+         MA_DLL is NOT listed here: it only selects export attributes and is
+         set by native/miniaudio/CMakeLists.txt itself. -->
+    <MiniaudioDefines></MiniaudioDefines>
+    <RepositoryRoot>$(MSBuildThisFileDirectory)</RepositoryRoot>
+    <NativeDir>$(RepositoryRoot)native\</NativeDir>
+    <ToolsDir>$(RepositoryRoot)tools\</ToolsDir>
+  </PropertyGroup>
+
+  <!--
+    Package metadata shared by all publishable projects.
+
+    Nothing is packable unless the project explicitly opts in with
+    <IsPackable>true</IsPackable> + <PackageId>. Today that is only
+    src/Ahjo.Miniaudio.Native; src/Ahjo.Miniaudio opts in once it has a
+    surface worth shipping.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <Authors>Pekka Heikura</Authors>
+    <Company>Ahjo</Company>
+    <Product>Ahjo.Miniaudio</Product>
+    <Copyright>Copyright (c) Pekka Heikura</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/pekkah/Ahjo-miniaudio</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/pekkah/Ahjo-miniaudio</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>audio;miniaudio;sound;interop;native</PackageTags>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <Deterministic>true</Deterministic>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!--
+    Package READMEs live next to each packable csproj. The repo-root
+    README.md stays contributor-focused and doesn't ship in any nupkg.
+    LICENSE is shipped at the nupkg root alongside the SPDX expression for
+    SBOM / OSS-scanning tools that look for a file.
+  -->
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Ahjo.Miniaudio.Native/Ahjo.Miniaudio.Native.csproj" />
+  <Project Path="src/Ahjo.Miniaudio/Ahjo.Miniaudio.csproj" />
+  <Project Path="tests/Ahjo.Miniaudio.Native.Tests/Ahjo.Miniaudio.Native.Tests.csproj" />
+  <Project Path="tests/Ahjo.Miniaudio.Tests/Ahjo.Miniaudio.Tests.csproj" />
+</Solution>

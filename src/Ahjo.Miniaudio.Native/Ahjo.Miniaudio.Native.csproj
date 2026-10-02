@@ -1,0 +1,210 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Ahjo.Miniaudio.Native</RootNamespace>
+    <AssemblyName>Ahjo.Miniaudio.Native</AssemblyName>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratedDir>$(MSBuildProjectDirectory)\Generated\</GeneratedDir>
+    <GeneratorResponseFile>$(ToolsDir)generate-miniaudio.rsp</GeneratorResponseFile>
+  </PropertyGroup>
+
+  <!--
+    Published as "Ahjo.Miniaudio.Native" on NuGet.
+
+    miniaudio is a single-header C library; we ship a shared library,
+    ahjo_miniaudio, compiled from one translation unit
+    (native/miniaudio/src/ahjo_miniaudio.c + CMakeLists.txt). The name is
+    ours on purpose: the binary is built with our defines, so it must not be
+    mistaken for (or shadowed by) some other package's miniaudio.dll.
+
+    The host-RID binary is built by cmake before the consuming project's
+    build resolves the staged Content item; the multi-RID nupkg aggregates
+    per-RID artifacts produced by .github/workflows/build-miniaudio-native.yml.
+  -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Ahjo.Miniaudio.Native</PackageId>
+    <Title>Ahjo.Miniaudio.Native</Title>
+    <Description>Raw P/Invoke bindings for miniaudio ($(MiniaudioVersion)). 1:1 with miniaudio.h. Ships the native runtime binary for Windows x64.</Description>
+    <PackageTags>audio;miniaudio;sound;interop;native;pinvoke;bindings</PackageTags>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
+  </PropertyGroup>
+
+  <!--
+    Host-RID detection: where cmake stages output, and which staged binary
+    downstream projects copy via ProjectReference propagation.
+  -->
+  <PropertyGroup>
+    <_MaRid Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">win-x64</_MaRid>
+    <_MaRid Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">win-arm64</_MaRid>
+    <_MaRid Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">linux-x64</_MaRid>
+    <_MaRid Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">linux-arm64</_MaRid>
+    <_MaRid Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">osx-x64</_MaRid>
+    <_MaRid Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">osx-arm64</_MaRid>
+
+    <_MaLibFile Condition="$([MSBuild]::IsOSPlatform('Windows'))">ahjo_miniaudio.dll</_MaLibFile>
+    <_MaLibFile Condition="$([MSBuild]::IsOSPlatform('Linux'))">libahjo_miniaudio.so</_MaLibFile>
+    <_MaLibFile Condition="$([MSBuild]::IsOSPlatform('OSX'))">libahjo_miniaudio.dylib</_MaLibFile>
+
+    <_MaSrcDir>$(NativeDir)miniaudio\</_MaSrcDir>
+    <_MaIncludeDir>$(_MaSrcDir)include\</_MaIncludeDir>
+    <_MaDownloadedDir>$(_MaSrcDir)downloaded\</_MaDownloadedDir>
+    <_MaZipPath>$(_MaDownloadedDir)miniaudio-$(MiniaudioVersion).zip</_MaZipPath>
+    <_MaBuildRootDir>$(_MaSrcDir)build\</_MaBuildRootDir>
+    <_MaBuildDir>$(_MaBuildRootDir)$(_MaRid)\</_MaBuildDir>
+    <_MaStagedRootDir>$(_MaSrcDir)staged\</_MaStagedRootDir>
+    <_MaStagedDir>$(_MaStagedRootDir)$(_MaRid)\</_MaStagedDir>
+    <_MaStagedBinary>$(_MaStagedDir)$(_MaLibFile)</_MaStagedBinary>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" PrivateAssets="all" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="$(_MaSrcDir)MINIAUDIO-LICENSE.txt" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <!--
+    Stage the host's binary into every downstream project's output. As a
+    Content+Link item it propagates through ProjectReference automatically,
+    so tests and samples find it beside their own assembly.
+  -->
+  <ItemGroup Condition="'$(_MaLibFile)' != '' and '$(SkipMiniaudioNativeBuild)' != 'true'">
+    <None Include="$(_MaStagedBinary)"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false"
+          Pack="false"
+          Link="$(_MaLibFile)" />
+  </ItemGroup>
+
+  <!--
+    Regenerate: refetch the pinned release, restage miniaudio.h (committed —
+    it is the generator input of record, so a bump shows the API diff), then
+    run ClangSharpPInvokeGenerator. Not wired into Build: regeneration is a
+    deliberate step and the generated C# is committed.
+
+    Usage: dotnet build src/Ahjo.Miniaudio.Native -t:Regenerate
+  -->
+  <Target Name="Regenerate" DependsOnTargets="FetchMiniaudio;RunClangSharpMiniaudioGenerator" />
+
+  <Target Name="FetchMiniaudio">
+    <MakeDir Directories="$(_MaDownloadedDir)" />
+
+    <DownloadFile
+      SourceUrl="https://github.com/mackron/miniaudio/archive/refs/tags/$(MiniaudioVersion).zip"
+      DestinationFolder="$(_MaDownloadedDir)"
+      DestinationFileName="miniaudio-$(MiniaudioVersion).zip"
+      SkipUnchangedFiles="true"
+      Condition="!Exists('$(_MaZipPath)')" />
+
+    <Unzip
+      SourceFiles="$(_MaZipPath)"
+      DestinationFolder="$(_MaDownloadedDir)"
+      OverwriteReadOnlyFiles="true" />
+
+    <ItemGroup>
+      <_MaExtractedHeader Include="$(_MaDownloadedDir)miniaudio-$(MiniaudioVersion)\miniaudio.h" />
+      <_MaExtractedLicense Include="$(_MaDownloadedDir)miniaudio-$(MiniaudioVersion)\LICENSE" />
+    </ItemGroup>
+
+    <Error
+      Condition="!Exists('@(_MaExtractedHeader)')"
+      Text="Could not locate miniaudio.h under $(_MaDownloadedDir) after extracting $(_MaZipPath)." />
+
+    <Copy SourceFiles="@(_MaExtractedHeader)" DestinationFolder="$(_MaIncludeDir)" />
+    <Copy SourceFiles="@(_MaExtractedLicense)" DestinationFiles="$(_MaSrcDir)MINIAUDIO-LICENSE.txt" />
+  </Target>
+
+  <Target Name="RunClangSharpMiniaudioGenerator">
+    <ItemGroup>
+      <_MaDefine Include="$(MiniaudioDefines)" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_MaDefineArgs>@(_MaDefine->'--define-macro %(Identity)', ' ')</_MaDefineArgs>
+    </PropertyGroup>
+
+    <!-- The generator never deletes: a type that disappears upstream would
+         otherwise linger as a stale file and keep compiling. -->
+    <RemoveDir Directories="$(GeneratedDir)" />
+    <MakeDir Directories="$(GeneratedDir)" />
+    <Exec
+      Command="dotnet tool run ClangSharpPInvokeGenerator @&quot;$(GeneratorResponseFile)&quot; $(_MaDefineArgs)"
+      WorkingDirectory="$(RepositoryRoot)" />
+    <Message Importance="high" Text="Generated miniaudio $(MiniaudioVersion) bindings written to $(GeneratedDir)" />
+  </Target>
+
+  <!--
+    Build the host-RID binary before the project's build step copies Content
+    items. Incremental on its real inputs, so a version bump, a define change
+    or a CMakeLists edit rebuilds it; an unchanged tree costs nothing. CI
+    cross-builds the other RIDs and drops their artifacts into
+    $(_MaStagedRootDir)<rid>\ before pack.
+
+    BeforeTargets="AssignTargetPaths" also fires during ProjectReference's
+    GetCopyToOutputDirectoryItems flow, so consumers get the binary in bin/.
+  -->
+  <Target Name="BuildMiniaudioForHost"
+          BeforeTargets="AssignTargetPaths"
+          Condition="'$(_MaLibFile)' != '' and '$(SkipMiniaudioNativeBuild)' != 'true'"
+          Inputs="$(_MaIncludeDir)miniaudio.h;$(_MaSrcDir)src\ahjo_miniaudio.c;$(_MaSrcDir)CMakeLists.txt;$(RepositoryRoot)Directory.Build.props"
+          Outputs="$(_MaStagedBinary)">
+    <Error
+      Condition="'$(_MaRid)' == ''"
+      Text="Unsupported host for the miniaudio native build: OS='$([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)' Arch='$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)'." />
+
+    <MakeDir Directories="$(_MaBuildDir);$(_MaStagedDir)" />
+
+    <Exec
+      Command="cmake -S &quot;$(_MaSrcDir.TrimEnd('\'))&quot; -B &quot;$(_MaBuildDir.TrimEnd('\'))&quot; --no-warn-unused-cli -DCMAKE_BUILD_TYPE=Release &quot;-DAHJO_MINIAUDIO_DEFINES=$(MiniaudioDefines)&quot;"
+      WorkingDirectory="$(RepositoryRoot)" />
+
+    <Exec
+      Command="cmake --build &quot;$(_MaBuildDir.TrimEnd('\'))&quot; --config Release --parallel"
+      WorkingDirectory="$(RepositoryRoot)" />
+
+    <!-- Multi-config generators (MSVC) drop the binary under Release\;
+         single-config ones (Makefiles, Ninja) at the build root. -->
+    <ItemGroup>
+      <_MaProducedBinary Include="$(_MaBuildDir)Release\$(_MaLibFile);$(_MaBuildDir)$(_MaLibFile)" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(_MaProducedBinary)"
+      DestinationFolder="$(_MaStagedDir)"
+      Condition="Exists('%(_MaProducedBinary.Identity)')" />
+
+    <Error
+      Condition="!Exists('$(_MaStagedBinary)')"
+      Text="cmake completed but $(_MaLibFile) was not found under $(_MaBuildDir)." />
+
+    <Message Importance="high" Text="Built miniaudio $(MiniaudioVersion) for $(_MaRid): $(_MaStagedBinary)" />
+  </Target>
+
+  <!--
+    Multi-RID pack. Expects per-RID binaries under
+    native/miniaudio/staged/<rid>/<libname> by the time pack runs; CI puts
+    the build matrix's artifacts there. A local pack includes the host RID
+    only.
+
+    Only win-x64 ships. miniaudio's runtime-state structs (ma_context,
+    ma_device, ma_mutex, ma_event, ...) have platform-specific layouts —
+    per-backend members under MA_SUPPORT_* and pthread types on POSIX — and
+    the bindings are generated for x86_64-pc-windows-msvc. Shipping a Linux
+    binary under these bindings would hand consumers structs of the wrong
+    size. See CLAUDE.md, "Platform layouts".
+  -->
+  <Target Name="PackMiniaudioRuntimes" BeforeTargets="_GetPackageFiles;GenerateNuspec" Condition="'$(IsPackable)' == 'true'">
+    <ItemGroup>
+      <_MaPackRid Include="win-x64"><LibFile>ahjo_miniaudio.dll</LibFile></_MaPackRid>
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="$(_MaStagedRootDir)%(_MaPackRid.Identity)\%(_MaPackRid.LibFile)"
+            Condition="Exists('$(_MaStagedRootDir)%(_MaPackRid.Identity)\%(_MaPackRid.LibFile)')">
+        <Pack>true</Pack>
+        <PackagePath>runtimes\%(_MaPackRid.Identity)\native\%(_MaPackRid.LibFile)</PackagePath>
+        <Visible>false</Visible>
+      </None>
+    </ItemGroup>
+  </Target>
+
+</Project>

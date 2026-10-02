@@ -1,0 +1,60 @@
+name: Build miniaudio Native
+
+# Per-RID build of the ahjo_miniaudio shared library. Each job builds the
+# binary for one RID, RUNS Ahjo.Miniaudio.Native.Tests against it (version
+# pin, struct-layout oracle, null-backend device lifecycle), and only then
+# uploads it as the workflow artifact miniaudio-native-<rid>.
+#
+# Defined once and called by both ci.yml and publish.yml, so the binary a
+# release ships comes from the same definition CI proves.
+#
+# Only win-x64 ships today. The bindings are generated for
+# x86_64-pc-windows-msvc and miniaudio's runtime-state structs are
+# platform-specific, so a Linux entry belongs here only together with the
+# layout work described in CLAUDE.md ("Platform layouts") — add the lane
+# and its passing LayoutTests first, then the RID to the pack target.
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  build:
+    name: Build + smoke miniaudio (${{ matrix.rid }})
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            runs-on: windows-latest
+            lib-file: ahjo_miniaudio.dll
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Builds the native library through the csproj's BuildMiniaudioForHost
+      # target, so CI and a local `dotnet build` take the same path.
+      - name: Build
+        run: dotnet build tests/Ahjo.Miniaudio.Native.Tests/Ahjo.Miniaudio.Native.Tests.csproj -c Release
+
+      - name: Test — Ahjo.Miniaudio.Native.Tests
+        run: dotnet test --project tests/Ahjo.Miniaudio.Native.Tests/Ahjo.Miniaudio.Native.Tests.csproj -c Release --no-build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniaudio-native-${{ matrix.rid }}
+          path: native/miniaudio/staged/${{ matrix.rid }}/${{ matrix.lib-file }}
+          if-no-files-found: error
+          retention-days: 14

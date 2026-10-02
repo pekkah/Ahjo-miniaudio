@@ -1,0 +1,89 @@
+# Auto-detect text files and normalize line endings to LF in the repo.
+* text=auto eol=lf
+
+# Windows-only files keep CRLF
+*.bat            text eol=crlf
+*.cmd            text eol=crlf
+*.ps1            text eol=crlf
+*.psm1           text eol=crlf
+*.sln            text eol=crlf
+*.vcxproj        text eol=crlf
+*.vcxproj.filters text eol=crlf
+*.props          text eol=crlf
+*.targets        text eol=crlf
+
+# Source code
+*.cs             text diff=csharp
+*.csproj         text
+*.fs             text
+*.fsproj         text
+*.vb             text
+*.xaml           text
+*.razor          text
+*.cshtml         text
+
+# Native source
+*.c              text diff=cpp
+*.h              text diff=cpp
+*.cc             text diff=cpp
+*.cpp            text diff=cpp
+*.cxx            text diff=cpp
+*.hpp            text diff=cpp
+*.hxx            text diff=cpp
+*.inl            text diff=cpp
+*.m              text diff=objc
+*.mm             text diff=objc
+
+# Build / config
+CMakeLists.txt   text
+*.cmake          text
+*.json           text
+*.yml            text
+*.yaml           text
+*.toml           text
+*.md             text diff=markdown
+
+# Treat as binary (do not diff or normalize)
+*.spv            binary
+*.dll            binary
+*.exe            binary
+*.so             binary
+*.dylib          binary
+*.a              binary
+*.lib            binary
+*.pdb            binary
+*.png            binary
+*.jpg            binary
+*.jpeg           binary
+*.gif            binary
+*.ico            binary
+*.bmp            binary
+*.tga            binary
+*.dds            binary
+*.ktx            binary
+*.ktx2           binary
+*.basis          binary
+*.exr            binary
+*.hdr            binary
+*.wav            binary
+*.ogg            binary
+*.mp3            binary
+*.flac           binary
+*.gltf           binary
+*.glb            binary
+*.fbx            binary
+*.obj.bin        binary
+*.zip            binary
+*.7z             binary
+*.tar            binary
+*.gz             binary
+*.xz             binary
+*.zst            binary
+*.snk            binary
+*.pfx            binary
+
+# LFS candidates — uncomment & install git-lfs if model/asset sizes warrant.
+# *.glb           filter=lfs diff=lfs merge=lfs -text
+# *.fbx           filter=lfs diff=lfs merge=lfs -text
+# *.ktx2          filter=lfs diff=lfs merge=lfs -text
+# *.exr           filter=lfs diff=lfs merge=lfs -text

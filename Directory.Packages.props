@@ -1,0 +1,26 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <!--
+    ClangSharpPInvokeGenerator is consumed as a dotnet tool (see
+    .config/dotnet-tools.json); the tool bundles libclang for all supported
+    RIDs, so no per-OS runtime packages are needed.
+  -->
+
+  <!-- xunit.v3 runs on Microsoft.Testing.Platform (opted into in
+       global.json); no VSTest adapter or Microsoft.NET.Test.Sdk needed. -->
+  <ItemGroup>
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+  </ItemGroup>
+
+  <!-- Derives package version from git tags + commit height; see
+       .github/workflows/publish.yml. -->
+  <ItemGroup>
+    <PackageVersion Include="MinVer" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>
