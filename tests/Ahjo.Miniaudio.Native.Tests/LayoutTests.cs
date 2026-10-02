@@ -21,11 +21,14 @@ public unsafe class LayoutTests
     {
         { "ma_context", sizeof(ma_context) },
         { "ma_context_config", sizeof(ma_context_config) },
+        { "ma_device_id", sizeof(ma_device_id) },
         { "ma_device", sizeof(ma_device) },
         { "ma_device_config", sizeof(ma_device_config) },
         { "ma_device_info", sizeof(ma_device_info) },
+        { "ma_device_notification", sizeof(ma_device_notification) },
         { "ma_decoder", sizeof(ma_decoder) },
         { "ma_decoder_config", sizeof(ma_decoder_config) },
+        { "ma_audio_buffer_ref", sizeof(ma_audio_buffer_ref) },
         { "ma_encoder", sizeof(ma_encoder) },
         { "ma_encoder_config", sizeof(ma_encoder_config) },
         { "ma_engine", sizeof(ma_engine) },
@@ -37,6 +40,8 @@ public unsafe class LayoutTests
         { "ma_resource_manager", sizeof(ma_resource_manager) },
         { "ma_resource_manager_config", sizeof(ma_resource_manager_config) },
         { "ma_node_graph", sizeof(ma_node_graph) },
+        // Returned by value from the listener/sound position getters.
+        { "ma_vec3f", sizeof(ma_vec3f) },
         // On Windows these four are typedefs of ma_handle (void*), so the
         // generator erases them to void* and there is no C# type to measure.
         // On POSIX they are pthread structs; that difference is exactly what
