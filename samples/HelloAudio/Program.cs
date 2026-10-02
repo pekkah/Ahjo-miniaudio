@@ -41,10 +41,11 @@ internal static class Program
             Console.WriteLine($"Backend: {context.Backend}, default device: {device.Name ?? "(none)"}");
 
             // 2. The engine: miniaudio's mixer and spatializer. Normally it
-            //    plays on its own device; with --pull it only mixes when asked.
+            //    plays on its own device, watched for reroutes and losses;
+            //    with --pull it only mixes when asked.
             using var engine = AudioEngine.Create(pull
                 ? new AudioEngineDescription { NoDevice = true }
-                : new AudioEngineDescription { Context = context });
+                : new AudioEngineDescription { Context = context, DeviceObserver = new DeviceWatcher() });
             Console.WriteLine($"Engine: {engine.Channels} ch @ {engine.SampleRate} Hz{(pull ? ", pulled by an AudioDevice" : "")}");
 
             using var output = pull ? PullThroughDevice(context, engine) : null;
@@ -52,9 +53,9 @@ internal static class Program
             // 3. Sounds — from generated PCM, or streamed from a file.
             var exitCode = file is null ? PlayTone(engine) : PlayFile(engine, file);
 
-            if (output?.Fault is { } fault)
+            if ((output?.Fault ?? engine.Fault) is { } fault)
             {
-                Console.Error.WriteLine($"The render callback failed: {fault}");
+                Console.Error.WriteLine($"A device callback failed: {fault}");
                 return 1;
             }
 
@@ -81,8 +82,18 @@ internal static class Program
 
     private sealed class EngineRenderer(AudioEngine engine) : IAudioRenderer
     {
+        private readonly DeviceWatcher _watcher = new();
+
         public void Render(Span<float> output, int channels) => engine.Read(output);
 
+        public void OnNotification(AudioDeviceNotification notification) => _watcher.OnNotification(notification);
+    }
+
+    // Device notifications arrive on a miniaudio thread. A game would record
+    // them for its own thread (or poll AudioEngine.IsStarted) rather than act
+    // here; printing is enough for a tour.
+    private sealed class DeviceWatcher : IAudioDeviceObserver
+    {
         public void OnNotification(AudioDeviceNotification notification)
         {
             if (notification == AudioDeviceNotification.Rerouted)

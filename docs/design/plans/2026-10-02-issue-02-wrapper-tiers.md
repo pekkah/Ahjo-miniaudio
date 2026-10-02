@@ -57,7 +57,10 @@ they touch `Ma.*`. Each folder corresponds to one tier.
 - `AudioEngineDescription` and `AudioEngine`: `Create` (maps the description, applies the
   `NoDevice` 2 ch / 48 kHz default and validates `ListenerCount` 0..4), `Start`, `Stop`,
   `Volume`, `Channels`, `SampleRate`, `TimeInFrames`, `Read`, `Listener`, `GetListener` and
-  `Dispose`. It keeps a child registry, a `LinkedList<IEngineChild>` under a `Lock`. Each
+  `Dispose`. `IsStarted` and `Fault` are added later, along with `DeviceObserver`, which
+  is installed as `notificationCallback` and reaches the engine through a
+  `GCHandle<AudioEngine>` in `config.pProcessUserData`. The constructor runs the init so
+  that the handle exists first. `NoDevice` with an observer is an `ArgumentException`. It keeps a child registry, a `LinkedList<IEngineChild>` under a `Lock`. Each
   child stores its own node.
 - `AudioListener`: a readonly struct (engine + index) with the members the spec lists.
   `SetPose` takes the translation as the position, the negated third row (normalized) as
@@ -91,6 +94,11 @@ Add the types the wrapper newly allocates or reads by pointer to both lists:
 - Device: the null context reports `Null` and at least one playback device. A device
   renderer is called with the device's channel count. A throwing renderer latches `Fault`,
   and the device keeps running. The `Stopped` notification arrives on `Stop`.
+- Engine device (`EngineDeviceTests`): `Started` arrives during `Create`; `Stop` and
+  `Start` notify and move `IsStarted`; `NoAutoStart` leaves it `false`; `Dispose`
+  (and disposing the context) delivers `Stopped`; a throwing observer latches `Fault`
+  while the mix continues; `NoDevice` with an observer is rejected. The null backend
+  cannot produce `Rerouted` or a device loss, and the test class says so.
 - Decoder: a WAV round-trip covering channels, rate, length and approximate samples;
   `Seek`; `DecodeAll`; resampling 44100 → 48000 scales the length; garbage bytes throw
   `MiniaudioException`.

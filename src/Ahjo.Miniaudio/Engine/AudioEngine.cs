@@ -1,3 +1,6 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
 using Ahjo.Miniaudio.Internal;
 using Ahjo.Miniaudio.Native;
 
@@ -34,8 +37,25 @@ public readonly record struct AudioEngineDescription
     /// <summary>Leave the device stopped until <see cref="AudioEngine.Start"/>.</summary>
     public bool NoAutoStart { get; init; }
 
+    /// <summary>
+    /// Receives the engine's device notifications: reroutes, and a
+    /// <see cref="AudioDeviceNotification.Stopped"/> you did not ask for when
+    /// the backend loses the device. Not allowed with <see cref="NoDevice"/>
+    /// (there is no device to observe; a pulled engine's device is the
+    /// caller's <see cref="AudioDevice"/>, observed through its renderer).
+    /// </summary>
+    public IAudioDeviceObserver? DeviceObserver { get; init; }
+
     internal void Validate()
     {
+        if (NoDevice && DeviceObserver is not null)
+        {
+            throw new ArgumentException(
+                "A NoDevice engine opens no device, so a DeviceObserver would never be called. " +
+                "Observe the AudioDevice that pulls the engine through its IAudioRenderer instead.",
+                nameof(DeviceObserver));
+        }
+
         ArgumentOutOfRangeException.ThrowIfNegative(Channels, nameof(Channels));
         ArgumentOutOfRangeException.ThrowIfNegative(SampleRate, nameof(SampleRate));
         ArgumentOutOfRangeException.ThrowIfNegative(PeriodSizeInFrames, nameof(PeriodSizeInFrames));
@@ -68,28 +88,71 @@ public sealed unsafe class AudioEngine : IDisposable
     private readonly AudioContext? _context;
     private readonly LinkedListNode<IDisposable>? _registration;
     private readonly bool _noDevice;
+    private readonly IAudioDeviceObserver? _observer;
+    private GCHandle<AudioEngine> _self;
     private ma_engine* _engine;
+    private Exception? _fault;
 
-    private AudioEngine(ma_engine* engine, AudioContext? context, bool noDevice)
+    private AudioEngine(in AudioEngineDescription description)
     {
-        _engine = engine;
-        _noDevice = noDevice;
-        Channels = (int)Ma.ma_engine_get_channels(engine);
-        SampleRate = (int)Ma.ma_engine_get_sample_rate(engine);
-        ListenerCount = (int)Ma.ma_engine_get_listener_count(engine);
+        _noDevice = description.NoDevice;
+        _observer = description.DeviceObserver;
+        var context = description.NoDevice ? null : description.Context;
+        var config = BuildConfig(description, context);
+
+        ma_device_id id;
+        if (!description.NoDevice && description.PlaybackDevice is { } device)
+        {
+            id = device.Native;
+            config.pPlaybackDeviceID = &id;
+        }
+
+        _engine = NativeBlock.Alloc<ma_engine>();
+        if (_observer is not null)
+        {
+            // The engine's device carries pUserData = the ma_engine, not us,
+            // so the way back to this object is ma_engine.pProcessUserData:
+            // miniaudio stores it before creating the device (notifications
+            // arrive during init when the engine starts itself) and reads it
+            // only to call onProcess, which stays null. Everything
+            // OnNotification touches is assigned above this point.
+            _self = new GCHandle<AudioEngine>(this);
+            config.pProcessUserData = (void*)GCHandle<AudioEngine>.ToIntPtr(_self);
+            config.notificationCallback = &OnNotification;
+        }
+
+        var result = Ma.ma_engine_init(&config, _engine);
+        if (result != ma_result.MA_SUCCESS)
+        {
+            NativeBlock.Free(_engine);
+            _engine = null;
+            if (_self.IsAllocated)
+            {
+                _self.Dispose();
+            }
+
+            throw new MiniaudioException(result, "ma_engine_init");
+        }
+
+        Channels = (int)Ma.ma_engine_get_channels(_engine);
+        SampleRate = (int)Ma.ma_engine_get_sample_rate(_engine);
+        ListenerCount = (int)Ma.ma_engine_get_listener_count(_engine);
         _context = context;
         _registration = context?.Register(this);
     }
 
     /// <summary>Creates an engine.</summary>
+    /// <exception cref="ArgumentException">A <see cref="AudioEngineDescription.DeviceObserver"/> on a <see cref="AudioEngineDescription.NoDevice"/> engine.</exception>
     /// <exception cref="MiniaudioException">The device could not be opened, or the engine could not be initialized.</exception>
     public static AudioEngine Create(in AudioEngineDescription description = default)
     {
         description.Validate();
+        return new AudioEngine(description);
+    }
 
+    private static ma_engine_config BuildConfig(in AudioEngineDescription description, AudioContext? context)
+    {
         var config = Ma.ma_engine_config_init();
-        var context = description.NoDevice ? null : description.Context;
-        ma_device_id id;
         if (description.NoDevice)
         {
             // ma_engine_init has no defaults without a device (it fails with
@@ -101,12 +164,6 @@ public sealed unsafe class AudioEngine : IDisposable
         else
         {
             config.pContext = context is null ? null : context.Native;
-            if (description.PlaybackDevice is { } device)
-            {
-                id = device.Native;
-                config.pPlaybackDeviceID = &id;
-            }
-
             config.channels = (uint)description.Channels;
             config.sampleRate = (uint)description.SampleRate;
         }
@@ -114,16 +171,7 @@ public sealed unsafe class AudioEngine : IDisposable
         config.periodSizeInFrames = (uint)description.PeriodSizeInFrames;
         config.listenerCount = (uint)description.ListenerCount;
         config.noAutoStart = Units.Bool(description.NoAutoStart);
-
-        var engine = NativeBlock.Alloc<ma_engine>();
-        var result = Ma.ma_engine_init(&config, engine);
-        if (result != ma_result.MA_SUCCESS)
-        {
-            NativeBlock.Free(engine);
-            throw new MiniaudioException(result, "ma_engine_init");
-        }
-
-        return new AudioEngine(engine, context, description.NoDevice);
+        return config;
     }
 
     /// <summary>Channels in the mix — what <see cref="Read"/> interleaves.</summary>
@@ -150,6 +198,29 @@ public sealed unsafe class AudioEngine : IDisposable
         get => Ma.ma_engine_get_volume(Native);
         set => MaCheck.ThrowIfFailed(Ma.ma_engine_set_volume(Native, value), "ma_engine_set_volume");
     }
+
+    /// <summary>
+    /// Whether the engine's device is running; always <see langword="false"/>
+    /// for a <see cref="AudioEngineDescription.NoDevice"/> engine. The polling
+    /// counterpart of <see cref="AudioEngineDescription.DeviceObserver"/>: a
+    /// game thread that did not call <see cref="Stop"/> and reads
+    /// <see langword="false"/> here has lost its device.
+    /// </summary>
+    public bool IsStarted
+    {
+        get
+        {
+            var device = Ma.ma_engine_get_device(Native);
+            return device != null && Ma.ma_device_is_started(device) != 0;
+        }
+    }
+
+    /// <summary>
+    /// The first exception the <see cref="AudioEngineDescription.DeviceObserver"/>
+    /// threw, or <see langword="null"/>. Once set, the observer is no longer
+    /// called; the engine keeps playing.
+    /// </summary>
+    public Exception? Fault => Volatile.Read(ref _fault);
 
     /// <summary>The first listener — the only one unless <see cref="AudioEngineDescription.ListenerCount"/> says otherwise.</summary>
     public AudioListener Listener => GetListener(0);
@@ -225,8 +296,35 @@ public sealed unsafe class AudioEngine : IDisposable
 
         _children.DisposeAll();
         _context?.Unregister(_registration);
+
+        // Uninit stops the device, which still delivers Stopped through the
+        // handle, so the handle must outlive it.
         Ma.ma_engine_uninit(_engine);
         NativeBlock.Free(_engine);
         _engine = null;
+        if (_self.IsAllocated)
+        {
+            _self.Dispose();
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void OnNotification(ma_device_notification* notification)
+    {
+        var engine = (ma_engine*)notification->pDevice->pUserData;
+        var self = GCHandle<AudioEngine>.FromIntPtr((nint)engine->pProcessUserData).Target;
+        if (Volatile.Read(ref self._fault) is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            self._observer!.OnNotification((AudioDeviceNotification)notification->type);
+        }
+        catch (Exception e)
+        {
+            Interlocked.CompareExchange(ref self._fault, e, null);
+        }
     }
 }

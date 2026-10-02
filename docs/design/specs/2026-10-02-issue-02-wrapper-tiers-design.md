@@ -130,10 +130,15 @@ AudioContext.Create(in AudioContextDescription)   // Backend: AudioBackend? (nul
 AudioDevice.Create(AudioContext?, in AudioDeviceDescription, IAudioRenderer)
   .Start(), .Stop(), .IsStarted, .Channels, .SampleRate, .Fault
 
-public interface IAudioRenderer
+public interface IAudioDeviceObserver
+{
+    void OnNotification(AudioDeviceNotification notification);     // miniaudio thread
+}
+
+public interface IAudioRenderer : IAudioDeviceObserver
 {
     void Render(Span<float> output, int channels);                 // audio thread
-    void OnNotification(AudioDeviceNotification notification) { }  // miniaudio thread
+    // OnNotification has a no-op default here
 }
 ```
 
@@ -147,7 +152,8 @@ public interface IAudioRenderer
   silence, and the exception is latched into `Fault`: the first fault wins. Once faulted,
   later callbacks write silence without calling the renderer again, so a broken renderer
   produces one exception rather than one per period. An escaped exception on a foreign
-  thread would kill the process.
+  thread would kill the process. A throwing `OnNotification` latches into the same `Fault`
+  under the same rule.
 - Steady-state callbacks allocate nothing: a handle lookup, an interface call and a
   `Span` over the native buffer.
 
@@ -173,8 +179,8 @@ load time is how a `ReadOnlySpan<byte>` API stays safe against the non-copying
 ```csharp
 AudioEngine.Create(in AudioEngineDescription)
   // Context?, PlaybackDevice?, NoDevice, Channels, SampleRate, PeriodSizeInFrames,
-  // ListenerCount (0 → 1, max 4), NoAutoStart
-  .Start(), .Stop(), .Volume, .Channels, .SampleRate, .TimeInFrames
+  // ListenerCount (0 → 1, max 4), NoAutoStart, DeviceObserver?
+  .Start(), .Stop(), .IsStarted, .Fault, .Volume, .Channels, .SampleRate, .TimeInFrames
   .Read(Span<float>)                       // NoDevice only; callable from a device callback
   .Listener, .GetListener(int) -> AudioListener (readonly struct: engine + index)
 
@@ -243,6 +249,30 @@ returns the endpoint node's local time. That time advances by the frames the end
 actually reads, and an endpoint with no attached nodes reads none. A sound or group that
 exists on the engine counts as attached even when it is stopped. `TimeInFrames` documents
 this, and `EngineTests.ReadAdvancesTheClockAndRejectsPartialFrames` pins it down.
+
+**An engine that owns its device reports on it like an `AudioDevice` does.** There are
+two surfaces, because Ahjo's game thread polls and a callback can only push:
+
+- `IsStarted` (`ma_engine_get_device` + `ma_device_is_started`) is the polled surface. A
+  game thread that never called `Stop` and reads `false` has lost its device. A `NoDevice`
+  engine always reads `false`.
+- `AudioEngineDescription.DeviceObserver` is the pushed surface: reroutes, and a
+  `Stopped` the caller did not ask for. Its exceptions latch into `AudioEngine.Fault`
+  under the device tier's rule, and the engine keeps mixing.
+
+`ma_engine_init` creates the device with `pUserData = pEngine` (`miniaudio.h:77574`),
+so the notification callback cannot reach the managed object through the device. It
+reaches it through `ma_engine.pProcessUserData` instead, which holds a non-pinning
+`GCHandle<AudioEngine>`. miniaudio stores that field before it creates the device
+(`:77545`), so notifications fired during init (the auto-start) already find the
+handle. It reads the field only to call `onProcess` (`:77872`), which the wrapper
+leaves null. As with the device, the handle is freed after `ma_engine_uninit`, which
+delivers `Stopped`.
+
+An observer on a `NoDevice` engine throws `ArgumentException` rather than being ignored.
+A dropped `Context` still leaves a working engine, but a dropped observer would silently
+never fire. A pulled engine's device is the caller's `AudioDevice`, observed through its
+renderer.
 
 ### Threading
 

@@ -40,6 +40,28 @@ sfx.Volume = settings.EffectsVolume;
 Create sounds at setup and play them per frame. A `Sound` is a voice: hold one
 per emitter, or a `SoundPool` per overlapping effect. Never create one per shot.
 
+## Device changes and failures
+
+An engine that opens its own device reports on it two ways:
+
+```csharp
+using var engine = AudioEngine.Create(new AudioEngineDescription { DeviceObserver = watcher });
+
+// Pushed, on a miniaudio thread: Rerouted (the default output changed),
+// Stopped (if you didn't call Stop, the device was lost).
+sealed class Watcher : IAudioDeviceObserver
+{
+    public void OnNotification(AudioDeviceNotification n) { /* record it for the game thread */ }
+}
+
+// Polled, from the game thread:
+if (!engine.IsStarted && !pausedByGame) { /* device lost: Start() or recreate */ }
+```
+
+An `AudioDevice` reports the same notifications through its renderer, which is
+also an `IAudioDeviceObserver`. In both cases an exception thrown by the observer
+is kept in `Fault` instead of crashing the audio thread.
+
 ## Rendering your own audio
 
 ```csharp

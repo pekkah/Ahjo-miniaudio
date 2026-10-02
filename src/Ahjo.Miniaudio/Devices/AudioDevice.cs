@@ -115,9 +115,10 @@ public sealed unsafe class AudioDevice : IDisposable
     public bool IsStarted => Ma.ma_device_is_started(Native) != 0;
 
     /// <summary>
-    /// The first exception the renderer threw, or <see langword="null"/>. Once
-    /// set, the device plays silence and no longer calls the renderer; dispose
-    /// and recreate it to recover.
+    /// The first exception the renderer threw (from <see cref="IAudioRenderer.Render"/>
+    /// or <see cref="IAudioDeviceObserver.OnNotification"/>), or <see langword="null"/>.
+    /// Once set, the device plays silence and no longer calls the renderer;
+    /// dispose and recreate it to recover.
     /// </summary>
     public Exception? Fault => Volatile.Read(ref _fault);
 
@@ -181,6 +182,11 @@ public sealed unsafe class AudioDevice : IDisposable
     private static void OnNotification(ma_device_notification* notification)
     {
         var self = GCHandle<AudioDevice>.FromIntPtr((nint)notification->pDevice->pUserData).Target;
+        if (Volatile.Read(ref self._fault) is not null)
+        {
+            return;
+        }
+
         try
         {
             self._renderer.OnNotification((AudioDeviceNotification)notification->type);
