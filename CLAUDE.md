@@ -1,4 +1,6 @@
-# Ahjo.Miniaudio — Claude Project Memory
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 .NET 11 / C# 15 bindings + wrapper for [miniaudio](https://github.com/mackron/miniaudio), aimed at the Ahjo game engine. Structure and conventions follow the sibling repo [Ahjo-Vulkan](https://github.com/pekkah/Ahjo-Vulkan); when in doubt about a pattern, look there first.
 
@@ -6,7 +8,7 @@
 
 1. **Generated code is generated.** Never hand-edit `src/Ahjo.Miniaudio.Native/Generated/`. Edit `tools/generate-miniaudio.rsp` (or `MiniaudioDefines`) and regenerate (`/regen-bindings`). Hand-written additions to the Native project go in a sibling `Manual/` folder.
 2. **One define list, two consumers.** `MiniaudioDefines` in `Directory.Build.props` is passed to both cmake and ClangSharp. Never add a struct-shaping `MA_*` define to only `CMakeLists.txt` or only the rsp — the bindings would silently disagree with the binary about `sizeof`.
-3. **`LayoutTests` is the oracle.** It compares every listed generated struct against the C compiler's `sizeof` via the `ahjo_ma_sizeof_*` exports in `native/miniaudio/src/ahjo_miniaudio.c`. A failure there is a real layout bug: never change the expected value to make it pass. When the wrapper starts allocating a new miniaudio type, add it to both lists.
+3. **`LayoutTests` is the oracle.** It compares every listed generated struct against the C compiler's `sizeof` via the `ahjo_ma_sizeof_*` exports in `native/miniaudio/src/ahjo_miniaudio.c`. A failure there is a real layout bug: never change the expected value to make it pass. When the wrapper starts allocating a new miniaudio type, add it to both lists: an `AHJO_MA_SIZEOF(T)` line in `ahjo_miniaudio.c` and an entry in `LayoutTests.Types`.
 4. **Native AOT stays clean** — `IsAotCompatible=true` on `src/` projects; no reflection discovery or dynamic codegen reachable from the wrapper. CI publishes `samples/HelloAudio` with `PublishAot=true` and runs it on the null backend.
 5. **Zero per-frame allocations** on anything the audio thread or a game frame calls (data callbacks, sound playback control, listener/spatial updates). Setup-time allocation is fine.
 6. **`TreatWarningsAsErrors=true`** with `AnalysisLevel=latest`. Fix the diagnostic; don't `#pragma` it away.
@@ -51,6 +53,13 @@ dotnet tool restore
 dotnet build Ahjo.Miniaudio.slnx          # also builds ahjo_miniaudio for the host via cmake
 dotnet test                               # Microsoft.Testing.Platform (see global.json)
 dotnet build src/Ahjo.Miniaudio.Native -t:Regenerate   # refetch pinned header + regenerate bindings
+
+# one project / one test (xunit v3 on MTP: --filter-class, --filter-method, wildcards ok)
+dotnet test --project tests/Ahjo.Miniaudio.Native.Tests --filter-method "*VersionMatchesPinnedRelease"
+
+# sample: tone by default, a file path to stream it, --null for no speakers
+dotnet run --project samples/HelloAudio -- --null
+dotnet publish samples/HelloAudio -c Release -r win-x64   # the Native AOT check CI runs
 ```
 
 The native build needs cmake and a C toolchain (MSVC on Windows). It is incremental on the header, the TU, `CMakeLists.txt` and `Directory.Build.props`.
@@ -62,6 +71,10 @@ Every test runs on miniaudio's **null backend**, which simulates a device on a t
 ## Version pin
 
 `MiniaudioVersion` in `Directory.Build.props` pins a **release tag** (`master` only moves on releases; `dev` is the unreleased next patch, `dev-0.12` the next major). `VersionMatchesPinnedRelease` asserts the loaded binary reports exactly the pin.
+
+## Release
+
+Versions come from MinVer (`v*` tags). `publish.yml` packs a preview on every push to `main` and a stable package on a GitHub Release. It pushes to NuGet.org only when the `NUGET_PUBLISH` repo variable is `true` **and** `NUGET_KEY` is set; otherwise packages are workflow artifacts only. The shipped native binary comes from `build-miniaudio-native.yml`, which both CI and publish call, and which runs `Ahjo.Miniaudio.Native.Tests` before uploading.
 
 ## Commit + PR style
 
