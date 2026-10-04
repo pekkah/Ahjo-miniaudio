@@ -6,7 +6,7 @@ public unsafe partial struct ma_sound_config
     public sbyte* pFilePath;
 
     [NativeTypeName("const wchar_t *")]
-    public ushort* pFilePathW;
+    public void* pFilePathW;
 
     [NativeTypeName("ma_data_source *")]
     public void* pDataSource;

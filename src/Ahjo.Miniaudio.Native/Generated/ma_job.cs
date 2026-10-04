@@ -116,7 +116,7 @@ public partial struct ma_job
                 public sbyte* pFilePath;
 
                 [NativeTypeName("wchar_t *")]
-                public ushort* pFilePathW;
+                public void* pFilePathW;
 
                 [NativeTypeName("ma_uint32")]
                 public uint flags;
@@ -206,7 +206,7 @@ public partial struct ma_job
                 public sbyte* pFilePath;
 
                 [NativeTypeName("wchar_t *")]
-                public ushort* pFilePathW;
+                public void* pFilePathW;
 
                 [NativeTypeName("ma_uint64")]
                 public ulong initialSeekPoint;

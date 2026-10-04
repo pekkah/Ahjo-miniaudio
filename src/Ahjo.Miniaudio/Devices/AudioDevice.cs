@@ -57,7 +57,8 @@ public sealed unsafe class AudioDevice : IDisposable
     private AudioDevice(AudioContext? context, in AudioDeviceDescription description, IAudioRenderer renderer)
     {
         _renderer = renderer;
-        _device = NativeBlock.Alloc<ma_device>();
+        // Opaque: its layout differs per platform, so the size comes from the binary.
+        _device = (ma_device*)NativeBlock.Alloc(Ma.ahjo_ma_sizeof_ma_device());
         _self = new GCHandle<AudioDevice>(this);
         try
         {
@@ -87,8 +88,8 @@ public sealed unsafe class AudioDevice : IDisposable
             throw;
         }
 
-        Channels = (int)_device->playback.channels;
-        SampleRate = (int)_device->sampleRate;
+        Channels = (int)Ma.ahjo_ma_device_get_playback_channels(_device);
+        SampleRate = (int)Ma.ahjo_ma_device_get_sample_rate(_device);
         _context = context;
         _registration = context?.Register(this);
     }
@@ -159,13 +160,14 @@ public sealed unsafe class AudioDevice : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnData(ma_device* device, void* output, void* input, uint frameCount)
     {
-        var self = GCHandle<AudioDevice>.FromIntPtr((nint)device->pUserData).Target;
+        // The one native call per period; the channel count was cached at init.
+        var self = GCHandle<AudioDevice>.FromIntPtr((nint)Ma.ahjo_ma_device_get_user_data(device)).Target;
         if (Volatile.Read(ref self._fault) is not null)
         {
             return; // the buffer arrives silenced
         }
 
-        var channels = (int)device->playback.channels;
+        var channels = self.Channels;
         var buffer = new Span<float>(output, (int)frameCount * channels);
         try
         {
@@ -181,7 +183,7 @@ public sealed unsafe class AudioDevice : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnNotification(ma_device_notification* notification)
     {
-        var self = GCHandle<AudioDevice>.FromIntPtr((nint)notification->pDevice->pUserData).Target;
+        var self = GCHandle<AudioDevice>.FromIntPtr((nint)Ma.ahjo_ma_device_get_user_data(notification->pDevice)).Target;
         if (Volatile.Read(ref self._fault) is not null)
         {
             return;

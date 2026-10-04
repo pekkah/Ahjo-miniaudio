@@ -360,7 +360,7 @@ public sealed unsafe class AudioEngine : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnNotification(ma_device_notification* notification)
     {
-        var engine = (ma_engine*)notification->pDevice->pUserData;
+        var engine = (ma_engine*)Ma.ahjo_ma_device_get_user_data(notification->pDevice);
         var self = GCHandle<AudioEngine>.FromIntPtr((nint)engine->pProcessUserData).Target;
         if (Volatile.Read(ref self._fault) is not null)
         {

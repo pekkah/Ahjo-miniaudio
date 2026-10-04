@@ -31,9 +31,6 @@ public static unsafe partial class Ma
     public static extern ma_result ma_log_post(ma_log* pLog, [NativeTypeName("ma_uint32")] uint level, [NativeTypeName("const char *")] sbyte* pMessage);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_log_postv(ma_log* pLog, [NativeTypeName("ma_uint32")] uint level, [NativeTypeName("const char *")] sbyte* pFormat, [NativeTypeName("va_list")] sbyte* args);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_biquad_config ma_biquad_config_init(ma_format format, [NativeTypeName("ma_uint32")] uint channels, double b0, double b1, double b2, double a0, double a1, double a2);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
@@ -1322,40 +1319,40 @@ public static unsafe partial class Ma
     public static extern ma_result ma_spinlock_unlock([NativeTypeName("ma_spinlock *")] uint* pSpinlock);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_mutex_init([NativeTypeName("ma_mutex *")] void** pMutex);
+    public static extern ma_result ma_mutex_init(ma_mutex* pMutex);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern void ma_mutex_uninit([NativeTypeName("ma_mutex *")] void** pMutex);
+    public static extern void ma_mutex_uninit(ma_mutex* pMutex);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern void ma_mutex_lock([NativeTypeName("ma_mutex *")] void** pMutex);
+    public static extern void ma_mutex_lock(ma_mutex* pMutex);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern void ma_mutex_unlock([NativeTypeName("ma_mutex *")] void** pMutex);
+    public static extern void ma_mutex_unlock(ma_mutex* pMutex);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_event_init([NativeTypeName("ma_event *")] void** pEvent);
+    public static extern ma_result ma_event_init(ma_event* pEvent);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern void ma_event_uninit([NativeTypeName("ma_event *")] void** pEvent);
+    public static extern void ma_event_uninit(ma_event* pEvent);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_event_wait([NativeTypeName("ma_event *")] void** pEvent);
+    public static extern ma_result ma_event_wait(ma_event* pEvent);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_event_signal([NativeTypeName("ma_event *")] void** pEvent);
+    public static extern ma_result ma_event_signal(ma_event* pEvent);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_semaphore_init(int initialValue, [NativeTypeName("ma_semaphore *")] void** pSemaphore);
+    public static extern ma_result ma_semaphore_init(int initialValue, ma_semaphore* pSemaphore);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern void ma_semaphore_uninit([NativeTypeName("ma_semaphore *")] void** pSemaphore);
+    public static extern void ma_semaphore_uninit(ma_semaphore* pSemaphore);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_semaphore_wait([NativeTypeName("ma_semaphore *")] void** pSemaphore);
+    public static extern ma_result ma_semaphore_wait(ma_semaphore* pSemaphore);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_semaphore_release([NativeTypeName("ma_semaphore *")] void** pSemaphore);
+    public static extern ma_result ma_semaphore_release(ma_semaphore* pSemaphore);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_fence_init(ma_fence* pFence);
@@ -1717,9 +1714,6 @@ public static unsafe partial class Ma
     public static extern ma_result ma_vfs_open([NativeTypeName("ma_vfs *")] void* pVFS, [NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("ma_uint32")] uint openMode, [NativeTypeName("ma_vfs_file *")] void** pFile);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_vfs_open_w([NativeTypeName("ma_vfs *")] void* pVFS, [NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("ma_uint32")] uint openMode, [NativeTypeName("ma_vfs_file *")] void** pFile);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_vfs_close([NativeTypeName("ma_vfs *")] void* pVFS, [NativeTypeName("ma_vfs_file")] void* file);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
@@ -1762,13 +1756,7 @@ public static unsafe partial class Ma
     public static extern ma_result ma_decoder_init_vfs([NativeTypeName("ma_vfs *")] void* pVFS, [NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("const ma_decoder_config *")] ma_decoder_config* pConfig, ma_decoder* pDecoder);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_decoder_init_vfs_w([NativeTypeName("ma_vfs *")] void* pVFS, [NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("const ma_decoder_config *")] ma_decoder_config* pConfig, ma_decoder* pDecoder);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_decoder_init_file([NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("const ma_decoder_config *")] ma_decoder_config* pConfig, ma_decoder* pDecoder);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_decoder_init_file_w([NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("const ma_decoder_config *")] ma_decoder_config* pConfig, ma_decoder* pDecoder);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_decoder_uninit(ma_decoder* pDecoder);
@@ -1810,13 +1798,7 @@ public static unsafe partial class Ma
     public static extern ma_result ma_encoder_init_vfs([NativeTypeName("ma_vfs *")] void* pVFS, [NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("const ma_encoder_config *")] ma_encoder_config* pConfig, ma_encoder* pEncoder);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_encoder_init_vfs_w([NativeTypeName("ma_vfs *")] void* pVFS, [NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("const ma_encoder_config *")] ma_encoder_config* pConfig, ma_encoder* pEncoder);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_encoder_init_file([NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("const ma_encoder_config *")] ma_encoder_config* pConfig, ma_encoder* pEncoder);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_encoder_init_file_w([NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("const ma_encoder_config *")] ma_encoder_config* pConfig, ma_encoder* pEncoder);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern void ma_encoder_uninit(ma_encoder* pEncoder);
@@ -1927,40 +1909,22 @@ public static unsafe partial class Ma
     public static extern ma_result ma_resource_manager_register_file(ma_resource_manager* pResourceManager, [NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("ma_uint32")] uint flags);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_resource_manager_register_file_w(ma_resource_manager* pResourceManager, [NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("ma_uint32")] uint flags);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_register_decoded_data(ma_resource_manager* pResourceManager, [NativeTypeName("const char *")] sbyte* pName, [NativeTypeName("const void *")] void* pData, [NativeTypeName("ma_uint64")] ulong frameCount, ma_format format, [NativeTypeName("ma_uint32")] uint channels, [NativeTypeName("ma_uint32")] uint sampleRate);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_resource_manager_register_decoded_data_w(ma_resource_manager* pResourceManager, [NativeTypeName("const wchar_t *")] ushort* pName, [NativeTypeName("const void *")] void* pData, [NativeTypeName("ma_uint64")] ulong frameCount, ma_format format, [NativeTypeName("ma_uint32")] uint channels, [NativeTypeName("ma_uint32")] uint sampleRate);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_register_encoded_data(ma_resource_manager* pResourceManager, [NativeTypeName("const char *")] sbyte* pName, [NativeTypeName("const void *")] void* pData, [NativeTypeName("size_t")] nuint sizeInBytes);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_resource_manager_register_encoded_data_w(ma_resource_manager* pResourceManager, [NativeTypeName("const wchar_t *")] ushort* pName, [NativeTypeName("const void *")] void* pData, [NativeTypeName("size_t")] nuint sizeInBytes);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_unregister_file(ma_resource_manager* pResourceManager, [NativeTypeName("const char *")] sbyte* pFilePath);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_resource_manager_unregister_file_w(ma_resource_manager* pResourceManager, [NativeTypeName("const wchar_t *")] ushort* pFilePath);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_unregister_data(ma_resource_manager* pResourceManager, [NativeTypeName("const char *")] sbyte* pName);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_resource_manager_unregister_data_w(ma_resource_manager* pResourceManager, [NativeTypeName("const wchar_t *")] ushort* pName);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_data_buffer_init_ex(ma_resource_manager* pResourceManager, [NativeTypeName("const ma_resource_manager_data_source_config *")] ma_resource_manager_data_source_config* pConfig, ma_resource_manager_data_buffer* pDataBuffer);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_data_buffer_init(ma_resource_manager* pResourceManager, [NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("const ma_resource_manager_pipeline_notifications *")] ma_resource_manager_pipeline_notifications* pNotifications, ma_resource_manager_data_buffer* pDataBuffer);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_resource_manager_data_buffer_init_w(ma_resource_manager* pResourceManager, [NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("const ma_resource_manager_pipeline_notifications *")] ma_resource_manager_pipeline_notifications* pNotifications, ma_resource_manager_data_buffer* pDataBuffer);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_data_buffer_init_copy(ma_resource_manager* pResourceManager, [NativeTypeName("const ma_resource_manager_data_buffer *")] ma_resource_manager_data_buffer* pExistingDataBuffer, ma_resource_manager_data_buffer* pDataBuffer);
@@ -2003,9 +1967,6 @@ public static unsafe partial class Ma
     public static extern ma_result ma_resource_manager_data_stream_init(ma_resource_manager* pResourceManager, [NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("const ma_resource_manager_pipeline_notifications *")] ma_resource_manager_pipeline_notifications* pNotifications, ma_resource_manager_data_stream* pDataStream);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_resource_manager_data_stream_init_w(ma_resource_manager* pResourceManager, [NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("const ma_resource_manager_pipeline_notifications *")] ma_resource_manager_pipeline_notifications* pNotifications, ma_resource_manager_data_stream* pDataStream);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_data_stream_uninit(ma_resource_manager_data_stream* pDataStream);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
@@ -2041,9 +2002,6 @@ public static unsafe partial class Ma
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_data_source_init(ma_resource_manager* pResourceManager, [NativeTypeName("const char *")] sbyte* pName, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("const ma_resource_manager_pipeline_notifications *")] ma_resource_manager_pipeline_notifications* pNotifications, ma_resource_manager_data_source* pDataSource);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_resource_manager_data_source_init_w(ma_resource_manager* pResourceManager, [NativeTypeName("const wchar_t *")] ushort* pName, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("const ma_resource_manager_pipeline_notifications *")] ma_resource_manager_pipeline_notifications* pNotifications, ma_resource_manager_data_source* pDataSource);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_resource_manager_data_source_init_copy(ma_resource_manager* pResourceManager, [NativeTypeName("const ma_resource_manager_data_source *")] ma_resource_manager_data_source* pExistingDataSource, ma_resource_manager_data_source* pDataSource);
@@ -2505,9 +2463,6 @@ public static unsafe partial class Ma
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_sound_init_from_file(ma_engine* pEngine, [NativeTypeName("const char *")] sbyte* pFilePath, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("ma_sound_group *")] ma_sound* pGroup, ma_fence* pDoneFence, ma_sound* pSound);
-
-    [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_sound_init_from_file_w(ma_engine* pEngine, [NativeTypeName("const wchar_t *")] ushort* pFilePath, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("ma_sound_group *")] ma_sound* pGroup, ma_fence* pDoneFence, ma_sound* pSound);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_sound_init_copy(ma_engine* pEngine, [NativeTypeName("const ma_sound *")] ma_sound* pExistingSound, [NativeTypeName("ma_uint32")] uint flags, [NativeTypeName("ma_sound_group *")] ma_sound* pGroup, ma_sound* pSound);
