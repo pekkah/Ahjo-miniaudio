@@ -25,7 +25,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>Ahjo.Miniaudio.Native</PackageId>
     <Title>Ahjo.Miniaudio.Native</Title>
-    <Description>Raw P/Invoke bindings for miniaudio ($(MiniaudioVersion)). 1:1 with miniaudio.h. Ships the native runtime binary for Windows x64.</Description>
+    <Description>Raw P/Invoke bindings for miniaudio ($(MiniaudioVersion)). 1:1 with miniaudio.h. Ships the native runtime binary for win-x64, win-arm64, linux-x64, linux-arm64 and osx-arm64.</Description>
     <PackageTags>audio;miniaudio;sound;playback;interop;native;pinvoke;bindings</PackageTags>
   </PropertyGroup>
 
@@ -183,16 +183,19 @@
     the build matrix's artifacts there. A local pack includes the host RID
     only.
 
-    Only win-x64 ships. miniaudio's runtime-state structs (ma_context,
-    ma_device, ma_mutex, ma_event, ...) have platform-specific layouts —
-    per-backend members under MA_SUPPORT_* and pthread types on POSIX — and
-    the bindings are generated for x86_64-pc-windows-msvc. Shipping a Linux
-    binary under these bindings would hand consumers structs of the wrong
-    size. See CLAUDE.md, "Platform layouts".
+    One managed assembly serves every RID listed here: miniaudio's
+    platform-dependent runtime state (ma_context, ma_device, ma_mutex, ...)
+    is opaque in the bindings and sized by the binary. A RID is listed only
+    once its lanes in build-miniaudio-native.yml and ci.yml pass, LayoutTests
+    included. See CLAUDE.md, "Platform layouts".
   -->
   <Target Name="PackMiniaudioRuntimes" BeforeTargets="_GetPackageFiles;GenerateNuspec" Condition="'$(IsPackable)' == 'true'">
     <ItemGroup>
       <_MaPackRid Include="win-x64"><LibFile>ahjo_miniaudio.dll</LibFile></_MaPackRid>
+      <_MaPackRid Include="win-arm64"><LibFile>ahjo_miniaudio.dll</LibFile></_MaPackRid>
+      <_MaPackRid Include="linux-x64"><LibFile>libahjo_miniaudio.so</LibFile></_MaPackRid>
+      <_MaPackRid Include="linux-arm64"><LibFile>libahjo_miniaudio.so</LibFile></_MaPackRid>
+      <_MaPackRid Include="osx-arm64"><LibFile>libahjo_miniaudio.dylib</LibFile></_MaPackRid>
     </ItemGroup>
 
     <ItemGroup>

@@ -97,7 +97,8 @@ exceptions.
 
 ## Platform support
 
-Follows `Ahjo.Miniaudio.Native`: `win-x64` today.
+Follows `Ahjo.Miniaudio.Native`: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`
+and `osx-arm64`.
 
 ## Licensing
 
