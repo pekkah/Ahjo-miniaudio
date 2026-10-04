@@ -47,8 +47,8 @@ multi-file
 # Everything below keeps the output platform-independent. It is a list to
 # re-check on every miniaudio bump: a new struct that embeds one of the
 # excluded types by value, or a new *_w entry point, would bring a platform
-# dependency back without failing the build. The regen-bindings skill has
-# the cross-target diff that catches it.
+# dependency back without failing the build. tools/check-bindings-portable.sh
+# is the cross-target diff that catches it.
 --exclude
 # Runtime state whose layout differs per platform: per-backend members under
 # MA_SUPPORT_*, and the sync types below embedded by value. Declared as empty

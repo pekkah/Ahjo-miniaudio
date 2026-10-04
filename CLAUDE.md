@@ -8,28 +8,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. **Generated code is generated.** Never hand-edit `src/Ahjo.Miniaudio.Native/Generated/`. Edit `tools/generate-miniaudio.rsp` (or `MiniaudioDefines`) and regenerate (`/regen-bindings`). Hand-written additions to the Native project go in a sibling `Manual/` folder.
 2. **One define list, two consumers.** `MiniaudioDefines` in `Directory.Build.props` is passed to both cmake and ClangSharp. Never add a struct-shaping `MA_*` define to only `CMakeLists.txt` or only the rsp — the bindings would silently disagree with the binary about `sizeof`.
-3. **`LayoutTests` is the oracle.** It compares every listed generated struct against the C compiler's `sizeof` via the `ahjo_ma_sizeof_*` exports in `native/miniaudio/src/ahjo_miniaudio.c`. A failure there is a real layout bug: never change the expected value to make it pass. When the wrapper starts allocating a new miniaudio type, add it to both lists: an `AHJO_MA_SIZEOF(T)` line in `ahjo_miniaudio.c` and an entry in `LayoutTests.Types`.
+3. **`LayoutTests` is the oracle.** It compares every listed generated struct against the C compiler's `sizeof` (and the fields the wrapper touches against `offsetof`) via the `ahjo_ma_sizeof_*` / `ahjo_ma_offsetof_*` exports in `native/miniaudio/src/ahjo_miniaudio.c`, on every RID lane. A failure there is a real layout bug: never change the expected value to make it pass. When the wrapper starts allocating a new miniaudio type, add it to both lists: an `AHJO_MA_SIZEOF(T)` line in `ahjo_miniaudio.c` and an entry in `LayoutTests.Types`; when it starts reading or writing a field of a generated struct, the same for `AHJO_MA_OFFSETOF(T, F)` and `LayoutTests.Fields`.
 4. **Native AOT stays clean** — `IsAotCompatible=true` on `src/` projects; no reflection discovery or dynamic codegen reachable from the wrapper. CI publishes `samples/HelloAudio` with `PublishAot=true` and runs it on the null backend.
 5. **Zero per-frame allocations** on anything the audio thread or a game frame calls (data callbacks, sound playback control, listener/spatial updates). Setup-time allocation is fine.
 6. **`TreatWarningsAsErrors=true`** with `AnalysisLevel=latest`. Fix the diagnostic; don't `#pragma` it away.
 7. **The sample tracks the public API.** When the wrapper gains a feature, `samples/HelloAudio` moves from the raw `Ma.*` calls to it — the sample is the first consumer and shows the intended usage.
+8. **Opaque types are opaque.** The types in `src/Ahjo.Miniaudio.Native/Manual/Opaque.cs` are empty C# structs, so `sizeof` of one is 1 and `NativeBlock.Alloc<T>()` of one corrupts memory. Allocate `Ma.ahjo_ma_sizeof_<T>()` bytes, and read a field through a miniaudio getter or a new `ahjo_ma_*` accessor in `ahjo_miniaudio.c` (imported in `Manual/Ma.Ahjo.cs`) — never by declaring the field in C#.
 
-## Platform layouts (why only win-x64 ships)
+## Platform layouts (one set of bindings, every RID)
 
-miniaudio's runtime-state structs are platform-specific: `ma_context` / `ma_device` carry per-backend members under `MA_SUPPORT_WASAPI` / `MA_SUPPORT_ALSA` / …, and `ma_mutex` / `ma_event` / `ma_semaphore` / `ma_thread` are `HANDLE`s on Windows but `pthread_*` structs on POSIX. Everything that embeds them (`ma_engine`, `ma_resource_manager`, `ma_sound`, …) inherits the difference.
+miniaudio's runtime-state structs are platform-specific: `ma_context` / `ma_device` carry per-backend members under `MA_SUPPORT_WASAPI` / `MA_SUPPORT_ALSA` / …, and `ma_mutex` / `ma_event` / `ma_semaphore` / `ma_thread` are `HANDLE`s on Windows but `pthread_*` types on POSIX. The structs that embed those by value move with them: `ma_resource_manager`, `ma_log`, `ma_fence`, `ma_async_notification_event`, `ma_job_queue`, `ma_device_job_thread`. `ma_engine`, `ma_sound`, `ma_decoder`, `ma_node_graph` and every `ma_*_config` do **not** — they hold the runtime state by pointer and are laid out the same on every target (as of 0.11.25).
 
-The bindings are therefore generated for one target, `x86_64-pc-windows-msvc` (pinned in the rsp), and only `win-x64` is built, tested and packed. Adding another RID needs a decision first — the two candidates:
+So the platform-dependent types are **opaque** (invariant 8): the rsp excludes them and `Manual/Opaque.cs` declares them empty; the binary reports their size. Also excluded or remapped, because they have no portable C# shape: the `*_w` entry points and `ma_log_postv` (`wchar_t` and `va_list` differ per target), and `wchar_t` itself, which becomes `void` in the remaining pointer fields. The bindings are generated for one pinned target, `x86_64-pc-windows-msvc`, and that one managed assembly serves every RID. `tools/check-bindings-portable.sh` proves it at regen time: parsing for linux-x64, linux-arm64 or osx-arm64 differs only in enum base type and `char` signedness, neither of which changes a layout. The parse-only POSIX shims in `native/stubs/` (`pthread.h`, `stdalign.h`) exist for that check; their sizes are dummies because nothing generated embeds them. Don't swap them for `MA_NO_PTHREAD_IN_HEADER`, which changes layouts and so could only go through `MiniaudioDefines` (invariant 2).
 
-- **Opaque state + native sizeof.** Exclude the platform-dependent structs from generation, declare them as empty opaque structs in `Manual/`, and allocate them from the `ahjo_ma_sizeof_*` exports. Config structs (`ma_*_config`) are platform-independent apart from pointer size and stay generated. One managed assembly for all RIDs.
-- **Per-RID bindings.** Generate per target triple and ship RID-specific managed assemblies. More faithful, much heavier to build and pack.
-
-Whichever is chosen, a new RID lands as: CI lane with passing `LayoutTests` on that RID → then the RID in `PackMiniaudioRuntimes`.
+A new RID lands as: a lane in `build-miniaudio-native.yml` and `ci.yml` with passing `LayoutTests` on that RID → then the RID in `PackMiniaudioRuntimes`. Linux builds on the oldest hosted Ubuntu (22.04, so glibc 2.35 is the floor); the macOS dylib targets 12.0 (`CMakeLists.txt`).
 
 ## Project shape
 
 ```
 src/
-  Ahjo.Miniaudio.Native/   ClangSharp P/Invokes against miniaudio.h (class `Ma`, library `ahjo_miniaudio`) + the host-RID native build
+  Ahjo.Miniaudio.Native/   ClangSharp P/Invokes against miniaudio.h (class `Ma`, library `ahjo_miniaudio`) + the host-RID native build;
+                           Manual/ holds the opaque runtime-state types and the ahjo_ma_* imports
   Ahjo.Miniaudio/          idiomatic wrapper for Ahjo (not packed yet): Devices/ (context, device,
                            render callback), Decoding/ (decoder, PcmBuffer), Engine/ (engine, sounds,
                            groups, pools, listener); design in docs/design/specs/*issue-02*
@@ -37,13 +36,14 @@ native/
   miniaudio/include/       miniaudio.h at the pinned tag — committed, the generator input of record
   miniaudio/src/           ahjo_miniaudio.c: the single TU (implementation + sizeof oracle)
   miniaudio/CMakeLists.txt shared library; MA_DLL exports, static MSVC CRT
-  stubs/                   parse-time libc shims so codegen needs no system toolchain
+  stubs/                   parse-time libc (+ POSIX pthread) shims so codegen needs no system toolchain
 samples/
   HelloAudio/              usage tour (tone + file playback); also the Native AOT publish check in CI
 tests/
   Ahjo.Miniaudio.Native.Tests/   version pin, layout oracle, null-backend context + device
   Ahjo.Miniaudio.Tests/          wrapper tests
 tools/generate-miniaudio.rsp     ClangSharp configuration
+tools/check-bindings-portable.sh regen-time check that the bindings fit every target
 docs/design/                     specs/ (what + why) and plans/ (how), named YYYY-MM-DD-issue-NN-<topic>
 ```
 
@@ -62,7 +62,7 @@ dotnet test --project tests/Ahjo.Miniaudio.Native.Tests --filter-method "*Versio
 
 # sample: tone by default, a file path to stream it, --null for no speakers
 dotnet run --project samples/HelloAudio -- --null
-dotnet publish samples/HelloAudio -c Release -r win-x64   # the Native AOT check CI runs
+dotnet publish samples/HelloAudio -c Release -r win-x64   # the Native AOT check CI runs (per RID)
 ```
 
 The native build needs cmake and a C toolchain (MSVC on Windows). It is incremental on the header, the TU, `CMakeLists.txt` and `Directory.Build.props`.
