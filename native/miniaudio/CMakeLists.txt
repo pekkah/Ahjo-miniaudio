@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
+
+# Without a deployment target the dylib's minimum macOS is the build
+# runner's SDK version, and dyld refuses it on anything older. Must be set
+# before project().
+set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version for ahjo_miniaudio")
+
 project(ahjo_miniaudio LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
