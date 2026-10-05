@@ -104,15 +104,20 @@ WSLg). `AudioContext.Create`, `AudioDevice.Create` and `AudioEngine.Create`
 take a `CancellationToken` so you can give up:
 
 ```csharp
-using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-AudioContext context;
-try
+using var context = CreateContext();
+
+static AudioContext CreateContext()
 {
-    context = AudioContext.Create(default, timeout.Token);
-}
-catch (OperationCanceledException)
-{
-    context = AudioContext.Create(new AudioContextDescription { Backend = AudioBackend.Null });
+    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+    try
+    {
+        return AudioContext.Create(default, timeout.Token);
+    }
+    catch (OperationCanceledException)
+    {
+        // Play silently rather than not at all.
+        return AudioContext.Create(new AudioContextDescription { Backend = AudioBackend.Null });
+    }
 }
 ```
 

@@ -121,25 +121,37 @@ public sealed unsafe class AudioEngine : IDisposable
         }
 
         var copy = description;
-        var result = AbandonableCall.Run(
-            () => Init(copy, contextNative, self, engine),
-            late =>
-            {
-                // A late success may already be delivering notifications
-                // through the handle, so it outlives the uninit.
-                if (late == ma_result.MA_SUCCESS)
+        ma_result result;
+        try
+        {
+            result = AbandonableCall.Run(
+                () => Init(copy, contextNative, self, engine),
+                late =>
                 {
-                    Ma.ma_engine_uninit(engine);
-                }
+                    // A late success may already be delivering notifications
+                    // through the handle, so it outlives the uninit.
+                    if (late == ma_result.MA_SUCCESS)
+                    {
+                        Ma.ma_engine_uninit(engine);
+                    }
 
-                NativeBlock.Free(engine);
-                if (self.IsAllocated)
-                {
-                    self.Dispose();
-                }
-            },
-            cancellationToken,
-            context);
+                    NativeBlock.Free(engine);
+                    if (self.IsAllocated)
+                    {
+                        self.Dispose();
+                    }
+                },
+                cancellationToken,
+                context);
+        }
+        catch (OperationCanceledException e)
+        {
+            // The init may still succeed on its thread and notify through
+            // the handle before it is uninitialized; a set fault keeps those
+            // notifications away from an object the caller never received.
+            Interlocked.CompareExchange(ref _fault, e, null);
+            throw;
+        }
 
         if (result != ma_result.MA_SUCCESS)
         {
@@ -168,7 +180,9 @@ public sealed unsafe class AudioEngine : IDisposable
     /// without a <see cref="AudioEngineDescription.Context"/>, its private
     /// context); see <see cref="AudioContext.Create"/> for what cancelling does
     /// and does not do. A <see cref="AudioEngineDescription.NoDevice"/> engine
-    /// never waits on a backend.
+    /// never waits on a backend. An abandoned engine that opens its device
+    /// after all is silenced toward its <see cref="AudioEngineDescription.DeviceObserver"/>,
+    /// but a notification that lands just as the token fires can still reach it.
     /// </param>
     /// <exception cref="ArgumentException">A <see cref="AudioEngineDescription.DeviceObserver"/> on a <see cref="AudioEngineDescription.NoDevice"/> engine.</exception>
     /// <exception cref="MiniaudioException">The device could not be opened, or the engine could not be initialized.</exception>

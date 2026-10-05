@@ -62,22 +62,34 @@ public sealed unsafe class AudioDevice : IDisposable
         var self = new GCHandle<AudioDevice>(this);
         var contextNative = context is null ? null : context.Native;
         var copy = description;
-        var result = AbandonableCall.Run(
-            () => Init(contextNative, copy, self, device),
-            late =>
-            {
-                // A late success may already be delivering notifications
-                // through the handle, so it outlives the uninit.
-                if (late == ma_result.MA_SUCCESS)
+        ma_result result;
+        try
+        {
+            result = AbandonableCall.Run(
+                () => Init(contextNative, copy, self, device),
+                late =>
                 {
-                    Ma.ma_device_uninit(device);
-                }
+                    // A late success may already be delivering notifications
+                    // through the handle, so it outlives the uninit.
+                    if (late == ma_result.MA_SUCCESS)
+                    {
+                        Ma.ma_device_uninit(device);
+                    }
 
-                NativeBlock.Free(device);
-                self.Dispose();
-            },
-            cancellationToken,
-            context);
+                    NativeBlock.Free(device);
+                    self.Dispose();
+                },
+                cancellationToken,
+                context);
+        }
+        catch (OperationCanceledException e)
+        {
+            // The init may still succeed on its thread and notify through
+            // the handle before it is uninitialized; a set fault keeps those
+            // notifications away from an object the caller never received.
+            Interlocked.CompareExchange(ref _fault, e, null);
+            throw;
+        }
 
         if (result != ma_result.MA_SUCCESS)
         {
