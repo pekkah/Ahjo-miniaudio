@@ -10,10 +10,20 @@ public readonly record struct AudioContextDescription
 {
     /// <summary>
     /// The backend to use. <see langword="null"/> (the default) tries the
-    /// platform's backends in miniaudio's priority order (WASAPI first on
-    /// Windows). <see cref="AudioBackend.Null"/> needs no audio hardware.
+    /// platform's real backends in miniaudio's priority order (WASAPI first on
+    /// Windows); if none initializes, <see cref="AudioContext.Create"/> throws.
+    /// <see cref="AudioBackend.Null"/> needs no audio hardware.
     /// </summary>
     public AudioBackend? Backend { get; init; }
+
+    /// <summary>
+    /// With <see cref="Backend"/> <see langword="null"/>, fall back to
+    /// <see cref="AudioBackend.Null"/> — a device that plays nothing — when no
+    /// real backend initializes, instead of throwing. miniaudio does this
+    /// silently; here it is opt-in, and <see cref="AudioContext.Backend"/>
+    /// tells you it happened. Ignored when <see cref="Backend"/> is set.
+    /// </summary>
+    public bool AllowNullBackend { get; init; }
 }
 
 /// <summary>
@@ -51,7 +61,7 @@ public sealed unsafe class AudioContext : IDisposable
     /// does, one parked thread and the context's memory stay until the process
     /// exits. Without a token the call blocks the caller instead.
     /// </param>
-    /// <exception cref="MiniaudioException">No requested backend could be initialized.</exception>
+    /// <exception cref="MiniaudioException">No requested backend could be initialized (and <see cref="AudioContextDescription.AllowNullBackend"/> was not set).</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
     public static AudioContext Create(in AudioContextDescription description = default, CancellationToken cancellationToken = default)
     {
@@ -59,9 +69,9 @@ public sealed unsafe class AudioContext : IDisposable
 
         // Opaque: its layout differs per platform, so the size comes from the binary.
         var context = (ma_context*)NativeBlock.Alloc(Ma.ahjo_ma_sizeof_ma_context());
-        var backend = description.Backend;
+        var backends = BackendsToTry(description.Backend, description.AllowNullBackend);
         var result = AbandonableCall.Run(
-            () => Init(backend, context),
+            () => Init(backends, context),
             late =>
             {
                 if (late == ma_result.MA_SUCCESS)
@@ -76,24 +86,49 @@ public sealed unsafe class AudioContext : IDisposable
         if (result != ma_result.MA_SUCCESS)
         {
             NativeBlock.Free(context);
-            throw new MiniaudioException(result, "ma_context_init");
+            throw description.Backend is null && !description.AllowNullBackend
+                ? new MiniaudioException(result, "ma_context_init", BackendFallback.AllowNullHint)
+                : new MiniaudioException(result, "ma_context_init");
         }
 
         return new AudioContext(context);
     }
 
-    // Everything ma_context_init reads lives here, not in Create's frame,
-    // which a cancelled caller has already left.
-    private static ma_result Init(AudioBackend? backend, ma_context* context)
+    /// <summary>Wraps a context initialized elsewhere (a device's or engine's private one); the caller transfers ownership.</summary>
+    internal static AudioContext Adopt(ma_context* context) => new(context);
+
+    /// <summary>
+    /// The backends to try, in order: just <paramref name="backend"/> if one
+    /// was requested, otherwise every backend in miniaudio's priority order
+    /// except Null, which comes last only when <paramref name="allowNull"/>.
+    /// Backends not compiled in for the platform are skipped by miniaudio.
+    /// </summary>
+    internal static ma_backend[] BackendsToTry(AudioBackend? backend, bool allowNull)
     {
-        var config = Ma.ma_context_config_init();
         if (backend is { } requested)
         {
-            var native = (ma_backend)requested;
-            return Ma.ma_context_init(&native, 1, &config, context);
+            return [(ma_backend)requested];
         }
 
-        return Ma.ma_context_init(null, 0, &config, context);
+        var count = allowNull ? (int)ma_backend.ma_backend_null + 1 : (int)ma_backend.ma_backend_null;
+        var backends = new ma_backend[count];
+        for (var i = 0; i < backends.Length; i++)
+        {
+            backends[i] = (ma_backend)i;
+        }
+
+        return backends;
+    }
+
+    // Everything ma_context_init reads lives here, not in Create's frame,
+    // which a cancelled caller has already left.
+    private static ma_result Init(ma_backend[] backends, ma_context* context)
+    {
+        var config = Ma.ma_context_config_init();
+        fixed (ma_backend* list = backends)
+        {
+            return Ma.ma_context_init(list, (uint)backends.Length, &config, context);
+        }
     }
 
     /// <summary>The backend this context initialized.</summary>

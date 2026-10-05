@@ -9,7 +9,12 @@ namespace Ahjo.Miniaudio;
 /// <summary>Options for <see cref="AudioEngine.Create"/>. The default is valid: the default device, started.</summary>
 public readonly record struct AudioEngineDescription
 {
-    /// <summary>The backend to open the device on; <see langword="null"/> for the platform default. Ignored with <see cref="NoDevice"/>.</summary>
+    /// <summary>
+    /// The backend to open the device on. <see langword="null"/> tries the
+    /// platform's real backends in priority order until one opens the device
+    /// (the null backend only with <see cref="AllowNullBackend"/>). Ignored
+    /// with <see cref="NoDevice"/>.
+    /// </summary>
     public AudioContext? Context { get; init; }
 
     /// <summary>The device to play on; <see langword="null"/> is the system default. Ignored with <see cref="NoDevice"/>.</summary>
@@ -36,6 +41,15 @@ public readonly record struct AudioEngineDescription
 
     /// <summary>Leave the device stopped until <see cref="AudioEngine.Start"/>.</summary>
     public bool NoAutoStart { get; init; }
+
+    /// <summary>
+    /// Without a <see cref="Context"/>, fall back to <see cref="AudioBackend.Null"/>
+    /// — a device that plays nothing — when no real backend opens a device,
+    /// instead of throwing. <see cref="AudioEngine.Backend"/> tells you it
+    /// happened. Ignored with a <see cref="Context"/> (it already chose) or
+    /// <see cref="NoDevice"/>.
+    /// </summary>
+    public bool AllowNullBackend { get; init; }
 
     /// <summary>
     /// Receives the engine's device notifications: reroutes, and a
@@ -90,6 +104,7 @@ public sealed unsafe class AudioEngine : IDisposable
 
     private readonly ChildRegistry _children = new();
     private readonly AudioContext? _context;
+    private readonly bool _ownsContext;
     private readonly LinkedListNode<IDisposable>? _registration;
     private readonly bool _noDevice;
     private readonly IAudioDeviceObserver? _observer;
@@ -115,7 +130,14 @@ public sealed unsafe class AudioEngine : IDisposable
         _noDevice = description.NoDevice;
         _observer = description.DeviceObserver;
         var context = description.NoDevice ? null : description.Context;
-        var contextNative = context is null ? null : context.Native;
+
+        // A device but no context: open a private one the way
+        // ma_engine_init would, but trying the null backend only if allowed
+        // (BackendFallback).
+        var ownsContext = !description.NoDevice && context is null;
+        var contextNative = ownsContext ? (ma_context*)NativeBlock.Alloc(Ma.ahjo_ma_sizeof_ma_context())
+            : context is null ? null : context.Native;
+        var backends = ownsContext ? AudioContext.BackendsToTry(null, description.AllowNullBackend) : null;
         var engine = NativeBlock.Alloc<ma_engine>();
         GCHandle<AudioEngine> self = default;
         if (_observer is not null)
@@ -134,7 +156,9 @@ public sealed unsafe class AudioEngine : IDisposable
         try
         {
             result = AbandonableCall.Run(
-                () => Init(copy, contextNative, self, engine),
+                () => ownsContext
+                    ? BackendFallback.Open(backends!, contextNative, c => Init(copy, (ma_context*)c, self, engine))
+                    : Init(copy, contextNative, self, engine),
                 late =>
                 {
                     // A late success may already be delivering notifications
@@ -142,9 +166,18 @@ public sealed unsafe class AudioEngine : IDisposable
                     if (late == ma_result.MA_SUCCESS)
                     {
                         Ma.ma_engine_uninit(engine);
+                        if (ownsContext)
+                        {
+                            Ma.ma_context_uninit(contextNative);
+                        }
                     }
 
                     NativeBlock.Free(engine);
+                    if (ownsContext)
+                    {
+                        NativeBlock.Free(contextNative);
+                    }
+
                     if (self.IsAllocated)
                     {
                         self.Dispose();
@@ -165,12 +198,19 @@ public sealed unsafe class AudioEngine : IDisposable
         if (result != ma_result.MA_SUCCESS)
         {
             NativeBlock.Free(engine);
+            if (ownsContext)
+            {
+                NativeBlock.Free(contextNative);
+            }
+
             if (self.IsAllocated)
             {
                 self.Dispose();
             }
 
-            throw new MiniaudioException(result, "ma_engine_init");
+            throw ownsContext && !description.AllowNullBackend
+                ? new MiniaudioException(result, "ma_engine_init", BackendFallback.AllowNullHint)
+                : new MiniaudioException(result, "ma_engine_init");
         }
 
         _engine = engine;
@@ -178,7 +218,8 @@ public sealed unsafe class AudioEngine : IDisposable
         Channels = (int)Ma.ma_engine_get_channels(engine);
         SampleRate = (int)Ma.ma_engine_get_sample_rate(engine);
         ListenerCount = (int)Ma.ma_engine_get_listener_count(engine);
-        _context = context;
+        _context = ownsContext ? AudioContext.Adopt(contextNative) : context;
+        _ownsContext = ownsContext;
         _registration = context?.Register(this);
     }
 
@@ -257,6 +298,20 @@ public sealed unsafe class AudioEngine : IDisposable
 
     /// <summary>How many listeners the engine spatializes against.</summary>
     public int ListenerCount { get; }
+
+    /// <summary>
+    /// The backend the engine's device opened on, or <see langword="null"/>
+    /// for a <see cref="AudioEngineDescription.NoDevice"/> engine.
+    /// <see cref="AudioBackend.Null"/> means it plays nothing.
+    /// </summary>
+    public AudioBackend? Backend
+    {
+        get
+        {
+            _ = Native;
+            return _context?.Backend;
+        }
+    }
 
     /// <summary>
     /// The engine's clock in frames at <see cref="SampleRate"/>: how much it
@@ -475,6 +530,12 @@ public sealed unsafe class AudioEngine : IDisposable
         if (!releasedNow)
         {
             _closed = true;
+        }
+
+        // After the engine: a deferred engine release still pins it.
+        if (_ownsContext)
+        {
+            _context!.Dispose();
         }
     }
 

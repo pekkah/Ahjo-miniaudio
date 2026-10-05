@@ -25,6 +25,14 @@ public sealed class MiniaudioException : Exception
         Operation = operation;
     }
 
+    /// <summary>Creates the exception for <paramref name="operation"/> failing with <paramref name="result"/>, with advice on what to do about it.</summary>
+    public MiniaudioException(ma_result result, string operation, string detail)
+        : base($"{operation} failed: {Describe(result)} ({result}). {detail}")
+    {
+        Result = result;
+        Operation = operation;
+    }
+
     /// <summary>The raw result the native call returned.</summary>
     public ma_result Result { get; }
 
