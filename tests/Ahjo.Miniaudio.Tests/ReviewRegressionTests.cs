@@ -15,8 +15,8 @@ public class ReviewRegressionTests
         asset.Dispose();
 
         var renderer = new PullRenderer(engine);
-        using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = 2, SampleRate = 48000 }, renderer);
-        device.Start();
+        using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = 2, SampleRate = 48000 }, renderer, TestContext.Current.CancellationToken);
+        device.Start(TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => Volatile.Read(ref renderer.Reads) > 10));
 
         // The wrong order on purpose: the engine goes while the audio thread
@@ -34,8 +34,8 @@ public class ReviewRegressionTests
     {
         using var engine = TestAudio.PullEngine();
 
-        Assert.Throws<InvalidOperationException>(engine.Start);
-        Assert.Throws<InvalidOperationException>(engine.Stop);
+        Assert.Throws<InvalidOperationException>(() => engine.Start(TestContext.Current.CancellationToken));
+        Assert.Throws<InvalidOperationException>(() => engine.Stop(TestContext.Current.CancellationToken));
     }
 
     [Fact]

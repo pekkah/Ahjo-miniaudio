@@ -22,18 +22,18 @@ public class EngineDeviceTests
     {
         using var context = TestAudio.NullContext();
         var observer = new RecordingObserver();
-        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, DeviceObserver = observer });
+        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, DeviceObserver = observer }, TestContext.Current.CancellationToken);
 
         // The engine starts itself inside Create.
         Assert.True(TestAudio.WaitUntil(() => observer.Contains(AudioDeviceNotification.Started)));
         Assert.True(engine.IsStarted);
 
-        engine.Stop();
+        engine.Stop(TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => observer.Contains(AudioDeviceNotification.Stopped)));
         Assert.False(engine.IsStarted);
 
         observer.Clear();
-        engine.Start();
+        engine.Start(TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => observer.Contains(AudioDeviceNotification.Started)));
         Assert.True(engine.IsStarted);
         Assert.Null(engine.Fault);
@@ -43,10 +43,10 @@ public class EngineDeviceTests
     public void NoAutoStartEngineIsStoppedUntilStarted()
     {
         using var context = TestAudio.NullContext();
-        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, NoAutoStart = true });
+        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, NoAutoStart = true }, TestContext.Current.CancellationToken);
 
         Assert.False(engine.IsStarted);
-        engine.Start();
+        engine.Start(TestContext.Current.CancellationToken);
         Assert.True(engine.IsStarted);
     }
 
@@ -55,7 +55,7 @@ public class EngineDeviceTests
     {
         var context = TestAudio.NullContext();
         var observer = new RecordingObserver();
-        var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, DeviceObserver = observer });
+        var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, DeviceObserver = observer }, TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => observer.Contains(AudioDeviceNotification.Started)));
         observer.Clear();
 
@@ -70,7 +70,7 @@ public class EngineDeviceTests
     {
         var context = TestAudio.NullContext();
         var observer = new RecordingObserver();
-        var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, DeviceObserver = observer });
+        var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, DeviceObserver = observer }, TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => observer.Contains(AudioDeviceNotification.Started)));
 
         context.Dispose();
@@ -84,14 +84,14 @@ public class EngineDeviceTests
     {
         using var context = TestAudio.NullContext();
         var observer = new ThrowingObserver();
-        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, DeviceObserver = observer });
+        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, DeviceObserver = observer }, TestContext.Current.CancellationToken);
         using var asset = TestAudio.ConstantAsset(480);
         using var sound = Sound.Create(engine, asset, new SoundDescription { Looping = true });
         sound.Play();
 
         Assert.True(TestAudio.WaitUntil(() => engine.Fault is not null), "the observer's exception was not latched");
-        engine.Stop();
-        engine.Start();
+        engine.Stop(TestContext.Current.CancellationToken);
+        engine.Start(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, Volatile.Read(ref observer.Calls)); // not called again once faulted
         Assert.IsType<InvalidOperationException>(engine.Fault);
@@ -103,7 +103,7 @@ public class EngineDeviceTests
     public void ObserverOnANoDeviceEngineIsRejected()
     {
         var e = Assert.Throws<ArgumentException>(() =>
-            AudioEngine.Create(new AudioEngineDescription { NoDevice = true, DeviceObserver = new RecordingObserver() }));
+            AudioEngine.Create(new AudioEngineDescription { NoDevice = true, DeviceObserver = new RecordingObserver() }, TestContext.Current.CancellationToken));
 
         Assert.Equal("DeviceObserver", e.ParamName);
     }
@@ -121,9 +121,9 @@ public class EngineDeviceTests
     {
         using var context = TestAudio.NullContext();
         var renderer = new NotificationThrowingRenderer();
-        using var device = AudioDevice.Create(context, default, renderer);
+        using var device = AudioDevice.Create(context, default, renderer, TestContext.Current.CancellationToken);
 
-        device.Start(); // Started throws inside the renderer's observer
+        device.Start(TestContext.Current.CancellationToken); // Started throws inside the renderer's observer
 
         Assert.True(TestAudio.WaitUntil(() => device.Fault is not null));
         var calls = Volatile.Read(ref renderer.RenderCalls);

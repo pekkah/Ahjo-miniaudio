@@ -14,7 +14,7 @@ public class EngineTests
     [Fact]
     public void NoDeviceEngineDefaultsToStereo48k()
     {
-        using var engine = AudioEngine.Create(new AudioEngineDescription { NoDevice = true });
+        using var engine = AudioEngine.Create(new AudioEngineDescription { NoDevice = true }, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, engine.Channels);
         Assert.Equal(48000, engine.SampleRate);
@@ -25,7 +25,7 @@ public class EngineTests
     public void EngineOnANullDeviceRunsItsClock()
     {
         using var context = TestAudio.NullContext();
-        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context });
+        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context }, TestContext.Current.CancellationToken);
         using var asset = TestAudio.ConstantAsset(480);
         using var sound = Sound.Create(engine, asset, new SoundDescription { Looping = true });
         sound.Play();
@@ -287,7 +287,7 @@ public class EngineTests
     [Fact]
     public void ListenersAreIndexedAndValidated()
     {
-        using var engine = AudioEngine.Create(new AudioEngineDescription { NoDevice = true, ListenerCount = 2 });
+        using var engine = AudioEngine.Create(new AudioEngineDescription { NoDevice = true, ListenerCount = 2 }, TestContext.Current.CancellationToken);
 
         var second = engine.GetListener(1);
         second.Velocity = new Vector3(1, 0, 0);
@@ -299,7 +299,7 @@ public class EngineTests
         Assert.True(engine.Listener.Enabled);
         Assert.Throws<ArgumentOutOfRangeException>(() => engine.GetListener(2));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            AudioEngine.Create(new AudioEngineDescription { NoDevice = true, ListenerCount = 5 }));
+            AudioEngine.Create(new AudioEngineDescription { NoDevice = true, ListenerCount = 5 }, TestContext.Current.CancellationToken));
         Assert.Throws<InvalidOperationException>(() => default(AudioListener).Position);
     }
 

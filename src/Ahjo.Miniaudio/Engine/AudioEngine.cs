@@ -9,7 +9,12 @@ namespace Ahjo.Miniaudio;
 /// <summary>Options for <see cref="AudioEngine.Create"/>. The default is valid: the default device, started.</summary>
 public readonly record struct AudioEngineDescription
 {
-    /// <summary>The backend to open the device on; <see langword="null"/> for the platform default. Ignored with <see cref="NoDevice"/>.</summary>
+    /// <summary>
+    /// The backend to open the device on. <see langword="null"/> tries the
+    /// platform's real backends in priority order until one opens the device
+    /// (the null backend only with <see cref="AllowNullBackend"/>). Ignored
+    /// with <see cref="NoDevice"/>.
+    /// </summary>
     public AudioContext? Context { get; init; }
 
     /// <summary>The device to play on; <see langword="null"/> is the system default. Ignored with <see cref="NoDevice"/>.</summary>
@@ -36,6 +41,15 @@ public readonly record struct AudioEngineDescription
 
     /// <summary>Leave the device stopped until <see cref="AudioEngine.Start"/>.</summary>
     public bool NoAutoStart { get; init; }
+
+    /// <summary>
+    /// Without a <see cref="Context"/>, fall back to <see cref="AudioBackend.Null"/>
+    /// — a device that plays nothing — when no real backend opens a device,
+    /// instead of throwing. <see cref="AudioEngine.Backend"/> tells you it
+    /// happened. Ignored with a <see cref="Context"/> (it already chose) or
+    /// <see cref="NoDevice"/>.
+    /// </summary>
+    public bool AllowNullBackend { get; init; }
 
     /// <summary>
     /// Receives the engine's device notifications: reroutes, and a
@@ -90,6 +104,7 @@ public sealed unsafe class AudioEngine : IDisposable
 
     private readonly ChildRegistry _children = new();
     private readonly AudioContext? _context;
+    private readonly bool _ownsContext;
     private readonly LinkedListNode<IDisposable>? _registration;
     private readonly bool _noDevice;
     private readonly IAudioDeviceObserver? _observer;
@@ -97,15 +112,142 @@ public sealed unsafe class AudioEngine : IDisposable
     private ma_engine* _engine;
     private Exception? _fault;
 
+    // Calls (Start, Stop) still running on an AbandonableCall thread after
+    // their caller stopped waiting; Dispose defers the native release to them.
+    private readonly InFlightCalls _calls = new(typeof(AudioEngine));
+
+    // Set when the caller no longer owns a running engine: its Create was
+    // cancelled, or its Dispose had to defer the uninit. Notifications then
+    // stay away from the observer.
+    private volatile bool _closed;
+
     // Reads in flight on another thread (a device's audio thread pulling a
     // NoDevice engine). Dispose waits for it to drain before freeing.
     private int _readers;
 
-    private AudioEngine(in AudioEngineDescription description)
+    private AudioEngine(in AudioEngineDescription description, CancellationToken cancellationToken)
     {
         _noDevice = description.NoDevice;
         _observer = description.DeviceObserver;
         var context = description.NoDevice ? null : description.Context;
+
+        // A device but no context: open a private one the way
+        // ma_engine_init would, but trying the null backend only if allowed
+        // (BackendFallback).
+        var ownsContext = !description.NoDevice && context is null;
+        var contextNative = ownsContext ? (ma_context*)NativeBlock.Alloc(Ma.ahjo_ma_sizeof_ma_context())
+            : context is null ? null : context.Native;
+        var backends = ownsContext ? AudioContext.BackendsToTry(null, description.AllowNullBackend) : null;
+        var engine = NativeBlock.Alloc<ma_engine>();
+        GCHandle<AudioEngine> self = default;
+        if (_observer is not null)
+        {
+            // The engine's device carries pUserData = the ma_engine, not us,
+            // so the way back to this object is ma_engine.pProcessUserData:
+            // miniaudio stores it before creating the device (notifications
+            // arrive during init when the engine starts itself) and reads it
+            // only to call onProcess, which stays null. Everything
+            // OnNotification touches is assigned above this point.
+            self = new GCHandle<AudioEngine>(this);
+        }
+
+        var copy = description;
+        ma_result result;
+        try
+        {
+            result = AbandonableCall.Run(
+                () => ownsContext
+                    ? BackendFallback.Open(backends!, contextNative, c => Init(copy, (ma_context*)c, self, engine))
+                    : Init(copy, contextNative, self, engine),
+                late =>
+                {
+                    // A late success may already be delivering notifications
+                    // through the handle, so it outlives the uninit.
+                    if (late == ma_result.MA_SUCCESS)
+                    {
+                        Ma.ma_engine_uninit(engine);
+                        if (ownsContext)
+                        {
+                            Ma.ma_context_uninit(contextNative);
+                        }
+                    }
+
+                    NativeBlock.Free(engine);
+                    if (ownsContext)
+                    {
+                        NativeBlock.Free(contextNative);
+                    }
+
+                    if (self.IsAllocated)
+                    {
+                        self.Dispose();
+                    }
+                },
+                cancellationToken,
+                outer: context?.Calls);
+        }
+        catch (OperationCanceledException)
+        {
+            // The init may still succeed on its thread and notify through
+            // the handle before it is uninitialized; keep those
+            // notifications away from an object the caller never received.
+            _closed = true;
+            throw;
+        }
+
+        if (result != ma_result.MA_SUCCESS)
+        {
+            NativeBlock.Free(engine);
+            if (ownsContext)
+            {
+                NativeBlock.Free(contextNative);
+            }
+
+            if (self.IsAllocated)
+            {
+                self.Dispose();
+            }
+
+            throw ownsContext && !description.AllowNullBackend
+                ? new MiniaudioException(result, "ma_engine_init", BackendFallback.AllowNullHint)
+                : new MiniaudioException(result, "ma_engine_init");
+        }
+
+        _engine = engine;
+        _self = self;
+        Channels = (int)Ma.ma_engine_get_channels(engine);
+        SampleRate = (int)Ma.ma_engine_get_sample_rate(engine);
+        ListenerCount = (int)Ma.ma_engine_get_listener_count(engine);
+        _context = ownsContext ? AudioContext.Adopt(contextNative) : context;
+        _ownsContext = ownsContext;
+        _registration = context?.Register(this);
+    }
+
+    /// <summary>Creates an engine.</summary>
+    /// <param name="description">The device, format and listeners.</param>
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend while the engine opens its device (and,
+    /// without a <see cref="AudioEngineDescription.Context"/>, its private
+    /// context); see <see cref="AudioContext.Create"/> for what cancelling does
+    /// and does not do. A <see cref="AudioEngineDescription.NoDevice"/> engine
+    /// never waits on a backend. An abandoned engine that opens its device
+    /// after all is silenced toward its <see cref="AudioEngineDescription.DeviceObserver"/>,
+    /// but a notification that lands just as the token fires can still reach it.
+    /// </param>
+    /// <exception cref="ArgumentException">A <see cref="AudioEngineDescription.DeviceObserver"/> on a <see cref="AudioEngineDescription.NoDevice"/> engine.</exception>
+    /// <exception cref="MiniaudioException">The device could not be opened, or the engine could not be initialized.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public static AudioEngine Create(in AudioEngineDescription description = default, CancellationToken cancellationToken = default)
+    {
+        description.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
+        return new AudioEngine(description, cancellationToken);
+    }
+
+    // Everything ma_engine_init reads lives here, not in the constructor's
+    // frame, which a cancelled caller has already left.
+    private static ma_result Init(AudioEngineDescription description, ma_context* context, GCHandle<AudioEngine> self, ma_engine* engine)
+    {
         var config = BuildConfig(description, context);
 
         ma_device_id id;
@@ -115,50 +257,16 @@ public sealed unsafe class AudioEngine : IDisposable
             config.pPlaybackDeviceID = &id;
         }
 
-        _engine = NativeBlock.Alloc<ma_engine>();
-        if (_observer is not null)
+        if (self.IsAllocated)
         {
-            // The engine's device carries pUserData = the ma_engine, not us,
-            // so the way back to this object is ma_engine.pProcessUserData:
-            // miniaudio stores it before creating the device (notifications
-            // arrive during init when the engine starts itself) and reads it
-            // only to call onProcess, which stays null. Everything
-            // OnNotification touches is assigned above this point.
-            _self = new GCHandle<AudioEngine>(this);
-            config.pProcessUserData = (void*)GCHandle<AudioEngine>.ToIntPtr(_self);
+            config.pProcessUserData = (void*)GCHandle<AudioEngine>.ToIntPtr(self);
             config.notificationCallback = &OnNotification;
         }
 
-        var result = Ma.ma_engine_init(&config, _engine);
-        if (result != ma_result.MA_SUCCESS)
-        {
-            NativeBlock.Free(_engine);
-            _engine = null;
-            if (_self.IsAllocated)
-            {
-                _self.Dispose();
-            }
-
-            throw new MiniaudioException(result, "ma_engine_init");
-        }
-
-        Channels = (int)Ma.ma_engine_get_channels(_engine);
-        SampleRate = (int)Ma.ma_engine_get_sample_rate(_engine);
-        ListenerCount = (int)Ma.ma_engine_get_listener_count(_engine);
-        _context = context;
-        _registration = context?.Register(this);
+        return Ma.ma_engine_init(&config, engine);
     }
 
-    /// <summary>Creates an engine.</summary>
-    /// <exception cref="ArgumentException">A <see cref="AudioEngineDescription.DeviceObserver"/> on a <see cref="AudioEngineDescription.NoDevice"/> engine.</exception>
-    /// <exception cref="MiniaudioException">The device could not be opened, or the engine could not be initialized.</exception>
-    public static AudioEngine Create(in AudioEngineDescription description = default)
-    {
-        description.Validate();
-        return new AudioEngine(description);
-    }
-
-    private static ma_engine_config BuildConfig(in AudioEngineDescription description, AudioContext? context)
+    private static ma_engine_config BuildConfig(in AudioEngineDescription description, ma_context* context)
     {
         var config = Ma.ma_engine_config_init();
         if (description.NoDevice)
@@ -171,7 +279,7 @@ public sealed unsafe class AudioEngine : IDisposable
         }
         else
         {
-            config.pContext = context is null ? null : context.Native;
+            config.pContext = context;
             config.channels = (uint)description.Channels;
             config.sampleRate = (uint)description.SampleRate;
         }
@@ -190,6 +298,20 @@ public sealed unsafe class AudioEngine : IDisposable
 
     /// <summary>How many listeners the engine spatializes against.</summary>
     public int ListenerCount { get; }
+
+    /// <summary>
+    /// The backend the engine's device opened on, or <see langword="null"/>
+    /// for a <see cref="AudioEngineDescription.NoDevice"/> engine.
+    /// <see cref="AudioBackend.Null"/> means it plays nothing.
+    /// </summary>
+    public AudioBackend? Backend
+    {
+        get
+        {
+            _ = Native;
+            return _context?.Backend;
+        }
+    }
 
     /// <summary>
     /// The engine's clock in frames at <see cref="SampleRate"/>: how much it
@@ -243,12 +365,57 @@ public sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>Starts the engine's device.</summary>
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend; see <see cref="AudioContext.Create"/>.
+    /// A cancelled start carries on in the background, so the device may
+    /// still start once the backend answers.
+    /// </param>
     /// <exception cref="InvalidOperationException">The engine has no device (<see cref="AudioEngineDescription.NoDevice"/>).</exception>
-    public void Start() => MaCheck.ThrowIfFailed(Ma.ma_engine_start(DeviceEngine(nameof(Start))), "ma_engine_start");
+    /// <exception cref="MiniaudioException">The backend could not start the device.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public void Start(CancellationToken cancellationToken = default)
+    {
+        var engine = DeviceEngine(nameof(Start));
+        if (!cancellationToken.CanBeCanceled)
+        {
+            MaCheck.ThrowIfFailed(Ma.ma_engine_start(engine), "ma_engine_start");
+            return;
+        }
+
+        Control(engine, start: true, cancellationToken);
+    }
 
     /// <summary>Stops the engine's device; sounds keep their state and resume on <see cref="Start"/>.</summary>
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend; see <see cref="AudioContext.Create"/>.
+    /// A cancelled stop carries on in the background.
+    /// </param>
     /// <exception cref="InvalidOperationException">The engine has no device (<see cref="AudioEngineDescription.NoDevice"/>).</exception>
-    public void Stop() => MaCheck.ThrowIfFailed(Ma.ma_engine_stop(DeviceEngine(nameof(Stop))), "ma_engine_stop");
+    /// <exception cref="MiniaudioException">The backend could not stop the device.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public void Stop(CancellationToken cancellationToken = default)
+    {
+        var engine = DeviceEngine(nameof(Stop));
+        if (!cancellationToken.CanBeCanceled)
+        {
+            MaCheck.ThrowIfFailed(Ma.ma_engine_stop(engine), "ma_engine_stop");
+            return;
+        }
+
+        Control(engine, start: false, cancellationToken);
+    }
+
+    // Separate from Start/Stop so their no-token path allocates no closure.
+    private void Control(ma_engine* engine, bool start, CancellationToken cancellationToken)
+    {
+        var result = AbandonableCall.Run(
+            () => start ? Ma.ma_engine_start(engine) : Ma.ma_engine_stop(engine),
+            static _ => { },
+            cancellationToken,
+            _calls,
+            _context?.Calls);
+        MaCheck.ThrowIfFailed(result, start ? "ma_engine_start" : "ma_engine_stop");
+    }
 
     // miniaudio answers a deviceless start/stop with MA_INVALID_OPERATION,
     // which would surface as a MiniaudioException — a native failure — for
@@ -348,21 +515,39 @@ public sealed unsafe class AudioEngine : IDisposable
         }
 
         // Uninit stops the device, which still delivers Stopped through the
-        // handle, so the handle must outlive it.
-        Ma.ma_engine_uninit(engine);
-        NativeBlock.Free(engine);
-        if (_self.IsAllocated)
+        // handle, so the handle must outlive it. A cancelled Start or Stop
+        // still waiting on the backend defers all of it to that call.
+        var self = _self;
+        var releasedNow = _calls.Release(() =>
         {
-            _self.Dispose();
+            Ma.ma_engine_uninit(engine);
+            NativeBlock.Free(engine);
+            if (self.IsAllocated)
+            {
+                self.Dispose();
+            }
+        });
+        if (!releasedNow)
+        {
+            _closed = true;
+        }
+
+        // After the engine: a deferred engine release still pins it.
+        if (_ownsContext)
+        {
+            _context!.Dispose();
         }
     }
+
+    /// <summary>The calls in flight against this engine (for tests).</summary>
+    internal InFlightCalls Calls => _calls;
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnNotification(ma_device_notification* notification)
     {
         var engine = (ma_engine*)Ma.ahjo_ma_device_get_user_data(notification->pDevice);
         var self = GCHandle<AudioEngine>.FromIntPtr((nint)engine->pProcessUserData).Target;
-        if (Volatile.Read(ref self._fault) is not null)
+        if (self._closed || Volatile.Read(ref self._fault) is not null)
         {
             return;
         }

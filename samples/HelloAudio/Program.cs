@@ -33,19 +33,18 @@ internal static class Program
         {
             // 1. The backend. Without one, miniaudio picks the platform's best
             //    (WASAPI on Windows); the null backend needs no hardware.
-            using var context = AudioContext.Create(new AudioContextDescription
-            {
-                Backend = useNullBackend ? AudioBackend.Null : null,
-            });
+            using var context = CreateContext(useNullBackend);
             var device = context.GetPlaybackDevices().FirstOrDefault(d => d.IsDefault);
             Console.WriteLine($"Backend: {context.Backend}, default device: {device.Name ?? "(none)"}");
 
             // 2. The engine: miniaudio's mixer and spatializer. Normally it
             //    plays on its own device, watched for reroutes and losses;
             //    with --pull it only mixes when asked.
+            using var engineTimeout = new CancellationTokenSource(BackendTimeout);
             using var engine = AudioEngine.Create(pull
                 ? new AudioEngineDescription { NoDevice = true }
-                : new AudioEngineDescription { Context = context, DeviceObserver = new DeviceWatcher() });
+                : new AudioEngineDescription { Context = context, DeviceObserver = new DeviceWatcher() },
+                engineTimeout.Token);
             Console.WriteLine($"Engine: {engine.Channels} ch @ {engine.SampleRate} Hz{(pull ? ", pulled by an AudioDevice" : "")}");
 
             using var output = pull ? PullThroughDevice(context, engine) : null;
@@ -66,16 +65,55 @@ internal static class Program
             Console.Error.WriteLine(e.Message);
             return 1;
         }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine($"The audio device did not open within {BackendTimeout.TotalSeconds} s.");
+            return 1;
+        }
     }
+
+    // Opening the backend talks to the system's audio server. There may be
+    // none that works (a headless machine), and some wait forever on a broken
+    // one (PulseAudio behind a wedged WSLg server). Either way, say so and
+    // play silently on the null backend — the wrapper never picks it on its
+    // own.
+    private static AudioContext CreateContext(bool useNullBackend)
+    {
+        var nullBackend = new AudioContextDescription { Backend = AudioBackend.Null };
+        if (useNullBackend)
+        {
+            return AudioContext.Create(nullBackend);
+        }
+
+        using var timeout = new CancellationTokenSource(BackendTimeout);
+        try
+        {
+            return AudioContext.Create(default, timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine($"The audio backend did not answer within {BackendTimeout.TotalSeconds} s; using the null backend (no sound).");
+            return AudioContext.Create(nullBackend);
+        }
+        catch (MiniaudioException e)
+        {
+            Console.Error.WriteLine($"No audio backend opened ({e.Result}); using the null backend (no sound).");
+            return AudioContext.Create(nullBackend);
+        }
+    }
+
+    private static readonly TimeSpan BackendTimeout = TimeSpan.FromSeconds(5);
 
     // A device whose audio thread asks the engine for each period. Anything
     // that renders audio can sit in an IAudioRenderer; the engine is one.
     private static AudioDevice PullThroughDevice(AudioContext context, AudioEngine engine)
     {
+        using var timeout = new CancellationTokenSource(BackendTimeout);
         var device = AudioDevice.Create(
             context,
             new AudioDeviceDescription { Channels = engine.Channels, SampleRate = engine.SampleRate },
-            new EngineRenderer(engine));
+            new EngineRenderer(engine),
+            timeout.Token);
         device.Start();
         return device;
     }

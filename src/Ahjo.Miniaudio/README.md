@@ -19,7 +19,7 @@ Three tiers that stack:
 ```csharp
 using Ahjo.Miniaudio;
 
-using var engine = AudioEngine.Create();          // default device, started
+using var engine = AudioEngine.Create();          // default device, started; throws if none (see "No audio device")
 using var sfx    = SoundGroup.Create(engine);     // a bus
 
 // Setup: load once, create voices.
@@ -94,6 +94,69 @@ first to avoid that fault.
 Native failures throw `MiniaudioException` with the raw `ma_result`. Misuse
 throws the standard `Argument*`, `ObjectDisposed` and `InvalidOperation`
 exceptions.
+
+## No audio device
+
+With no `Backend` (or no `Context`), the wrapper tries the platform's real
+backends in miniaudio's priority order. If none opens, `Create` throws
+`MiniaudioException`. That covers a headless server, a CI runner, or a machine
+with its audio service stopped. miniaudio itself would quietly fall back to its
+null backend, a device that plays nothing. Here that fallback is opt-in:
+
+```csharp
+using var engine = AudioEngine.Create(new AudioEngineDescription { AllowNullBackend = true });
+if (engine.Backend == AudioBackend.Null)
+{
+    log.Warn("No audio device; running silent.");
+}
+```
+
+`AllowNullBackend` exists on `AudioContextDescription`, `AudioDeviceDescription`
+and `AudioEngineDescription`. `Backend` on the context, device and engine says
+where each one landed.
+
+## Backends that never answer
+
+Opening a context, device or engine talks to the system's audio server, and
+some backends wait for it with no timeout. PulseAudio blocks forever on a
+server that accepted the connection and then stopped responding (seen with
+WSLg); enumerating, starting and stopping can block the same way. These calls
+take a `CancellationToken` so you can give up:
+
+- `AudioContext.Create` and `AudioContext.GetPlaybackDevices`
+- `AudioDevice.Create`, `Start` and `Stop`
+- `AudioEngine.Create`, `Start` and `Stop`
+
+```csharp
+using var context = CreateContext();
+
+static AudioContext CreateContext()
+{
+    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+    try
+    {
+        return AudioContext.Create(default, timeout.Token);
+    }
+    catch (Exception e) when (e is OperationCanceledException or MiniaudioException)
+    {
+        // Wedged or absent: play silently rather than not at all.
+        return AudioContext.Create(new AudioContextDescription { Backend = AudioBackend.Null });
+    }
+}
+```
+
+miniaudio cannot interrupt that wait, so cancelling stops *you* waiting:
+
+- **The call keeps running.** It continues on a background thread, so a
+  cancelled `Start` may still start the device once the backend answers.
+- **Its memory is released when it returns.** If it never returns, one parked
+  thread and that allocation stay until the process exits.
+- **The object's native state lives as long as the call.** `Dispose` never
+  blocks on it. It defers the native release to that call, and from then on
+  the device stops calling its renderer and the engine stops notifying its
+  observer.
+- **Without a token, the call blocks**, just as miniaudio does, and allocates
+  nothing.
 
 ## Platform support
 

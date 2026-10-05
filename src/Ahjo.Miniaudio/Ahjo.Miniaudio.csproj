@@ -35,4 +35,10 @@
     <ProjectReference Include="..\Ahjo.Miniaudio.Native\Ahjo.Miniaudio.Native.csproj" />
   </ItemGroup>
 
+  <!-- The tests drive Internal/AbandonableCall directly: the path where a
+       backend never answers cannot be reached on the null backend. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ahjo.Miniaudio.Tests" />
+  </ItemGroup>
+
 </Project>

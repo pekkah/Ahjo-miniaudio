@@ -38,6 +38,38 @@ public class AllocationTests
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
+    [Fact]
+    public void StartAndStopWithoutATokenAllocateNothing()
+    {
+        // The token path runs on its own thread; the plain path must stay a
+        // direct native call. CancellationToken.None is that plain path.
+        using var context = TestAudio.NullContext();
+        using var device = AudioDevice.Create(context, default, new SilentRenderer(), CancellationToken.None);
+        using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, NoAutoStart = true }, CancellationToken.None);
+        StartStop(device, engine);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 10; i++)
+        {
+            StartStop(device, engine);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
+
+    private static void StartStop(AudioDevice device, AudioEngine engine)
+    {
+        device.Start(CancellationToken.None);
+        device.Stop(CancellationToken.None);
+        engine.Start(CancellationToken.None);
+        engine.Stop(CancellationToken.None);
+    }
+
+    private sealed class SilentRenderer : IAudioRenderer
+    {
+        public void Render(Span<float> output, int channels) => output.Clear();
+    }
+
     private static void Frame(AudioEngine engine, Sound sound, SoundGroup group, SoundPool pool, float[] mix, in Matrix4x4 pose, int i)
     {
         var t = i / 100f;
