@@ -1,7 +1,7 @@
 name: Publish
 
 # Triggers and what they ship:
-#   push to main       → preview package (MinVer: 0.0.0-alpha.0.<height> until
+#   push to main       → preview package (MinVer: 0.1.0-alpha.0.<height> until
 #                        the first tag, then 0.x.y-alpha.0.<height>).
 #   release published  → stable package. Tag the commit v0.1.0 and publish a
 #                        GitHub Release on that tag; the nupkgs are attached
