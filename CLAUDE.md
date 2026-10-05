@@ -69,7 +69,7 @@ The native build needs cmake and a C toolchain (MSVC on Windows). It is incremen
 
 ## Tests
 
-Every test runs on miniaudio's **null backend**, which simulates a device on a timer thread. Hosted CI runners have no audio hardware; the null backend is what lets the full context/device lifecycle (including the data callback on miniaudio's own thread) run there honestly. Tests that need real audio output are local-only and must say so in their skip reason.
+Every test runs on miniaudio's **null backend**, which simulates a device on a timer thread. Hosted CI runners have no audio hardware; the null backend is what lets the full context/device lifecycle (including the data callback on miniaudio's own thread) run there honestly. Tests that need real audio output are local-only and must say so in their skip reason. The one exception is the `AlwaysOpen` cases in `BackendSelectionTests`. They use the default backend list with `AllowNullBackend`, so they open a real backend where there is one (WASAPI on a desktop) and Null on a headless runner. They assert only what holds on every lane.
 
 ## Version pin
 
