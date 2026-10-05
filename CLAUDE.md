@@ -79,7 +79,7 @@ Every test runs on miniaudio's **null backend**, which simulates a device on a t
 
 ## Release
 
-Versions come from MinVer (`v*` tags). `publish.yml` packs a preview on every push to `main` and a stable package on a GitHub Release. It pushes to NuGet.org only when the `NUGET_PUBLISH` repo variable is `true` **and** `NUGET_KEY` is set; otherwise packages are workflow artifacts only. The shipped native binary comes from `build-miniaudio-native.yml`, which both CI and publish call, and which runs `Ahjo.Miniaudio.Native.Tests` before uploading.
+Versions come from MinVer (`v*` tags). `publish.yml` packs a preview on every push to `main` and a stable package on a GitHub Release. It pushes to NuGet.org only when the `NUGET_PUBLISH` repo variable is `true` **and** `NUGET_USER` (the nuget.org profile name) is set; otherwise packages are workflow artifacts only. The push uses nuget.org Trusted Publishing (`NuGet/login`, OIDC), not an API key secret; the policy on nuget.org names this repo and `publish.yml`, so renaming the workflow file breaks publishing until the policy is updated. The shipped native binary comes from `build-miniaudio-native.yml`, which both CI and publish call, and which runs `Ahjo.Miniaudio.Native.Tests` before uploading.
 
 ## Roles: architect and implementer
 

@@ -12,9 +12,16 @@ name: Publish
 # Pushing to NuGet.org is OFF until explicitly enabled. It needs BOTH:
 #   - the repository variable NUGET_PUBLISH set to `true`
 #     (gh variable set NUGET_PUBLISH --body true), and
-#   - the NUGET_KEY repository secret.
+#   - the repository variable NUGET_USER set to the nuget.org profile name
+#     (not the email) that owns the packages
+#     (gh variable set NUGET_USER --body <profile-name>).
 # Until then every trigger still builds, tests and packs, and uploads the
 # packages as the `nuget-packages` workflow artifact — nothing leaves GitHub.
+#
+# There is no API key secret: the push uses nuget.org Trusted Publishing. The
+# job trades its GitHub OIDC token for a one-hour API key, which nuget.org
+# grants only if NUGET_USER has a Trusted Publishing policy naming this
+# repository and this workflow file (publish.yml).
 
 on:
   push:
@@ -54,10 +61,8 @@ jobs:
     needs: [build-native]
     permissions:
       contents: write
-    env:
-      # Read through env so the push step can skip cleanly (rather than fail)
-      # until the secret is configured; `secrets` is not allowed in `if:`.
-      NUGET_KEY: ${{ secrets.NUGET_KEY }}
+      # Lets the job request the GitHub OIDC token that NuGet/login exchanges.
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -117,11 +122,22 @@ jobs:
           path: ${{ github.workspace }}/artifacts/*.*nupkg
           if-no-files-found: error
 
+      # Kept directly before the push: the key it returns expires after an
+      # hour, and each OIDC token buys exactly one key.
+      - name: NuGet login (OIDC → temporary API key)
+        id: nuget-login
+        if: vars.NUGET_PUBLISH == 'true' && vars.NUGET_USER != '' && (github.event_name != 'workflow_dispatch' || inputs.release == true)
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Push to NuGet.org
-        if: vars.NUGET_PUBLISH == 'true' && env.NUGET_KEY != '' && (github.event_name != 'workflow_dispatch' || inputs.release == true)
+        if: steps.nuget-login.outcome == 'success'
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: >-
           dotnet nuget push "${{ github.workspace }}/artifacts/*.nupkg"
-          --api-key "$NUGET_KEY"
+          --api-key "$NUGET_API_KEY"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
