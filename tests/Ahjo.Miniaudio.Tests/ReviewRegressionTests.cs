@@ -15,7 +15,7 @@ public class ReviewRegressionTests
         asset.Dispose();
 
         var renderer = new PullRenderer(engine);
-        using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = 2, SampleRate = 48000 }, renderer);
+        using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = 2, SampleRate = 48000 }, renderer, TestContext.Current.CancellationToken);
         device.Start();
         Assert.True(TestAudio.WaitUntil(() => Volatile.Read(ref renderer.Reads) > 10));
 

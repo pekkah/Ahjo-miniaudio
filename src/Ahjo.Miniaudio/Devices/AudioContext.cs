@@ -30,27 +30,51 @@ public readonly record struct AudioContextDescription
 public sealed unsafe class AudioContext : IDisposable
 {
     private readonly ChildRegistry _children = new();
+    private readonly Lock _lock = new();
     private ma_context* _context;
+
+    // Device and engine inits against this context still running on a
+    // background thread after their caller cancelled (see AbandonableCall).
+    // They are using the native context, so Dispose leaves releasing it to
+    // the last of them, parked in _orphaned.
+    private int _initsInFlight;
+    private ma_context* _orphaned;
 
     private AudioContext(ma_context* context) => _context = context;
 
     /// <summary>Initializes a context on the requested backend.</summary>
+    /// <param name="description">Which backend.</param>
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend, e.g. a timeout from
+    /// <see cref="CancellationTokenSource(TimeSpan)"/>. Some backends can block
+    /// indefinitely: PulseAudio waits without a timeout for a server that
+    /// accepted the connection and never answers. miniaudio cannot interrupt
+    /// that wait, so cancelling abandons it: the init carries on on a
+    /// background thread and is cleaned up whenever it returns — if it never
+    /// does, one parked thread and the context's memory stay until the process
+    /// exits. Without a token the call blocks the caller instead.
+    /// </param>
     /// <exception cref="MiniaudioException">No requested backend could be initialized.</exception>
-    public static AudioContext Create(in AudioContextDescription description = default)
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public static AudioContext Create(in AudioContextDescription description = default, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Opaque: its layout differs per platform, so the size comes from the binary.
         var context = (ma_context*)NativeBlock.Alloc(Ma.ahjo_ma_sizeof_ma_context());
-        var config = Ma.ma_context_config_init();
-        ma_result result;
-        if (description.Backend is { } backend)
-        {
-            var native = (ma_backend)backend;
-            result = Ma.ma_context_init(&native, 1, &config, context);
-        }
-        else
-        {
-            result = Ma.ma_context_init(null, 0, &config, context);
-        }
+        var backend = description.Backend;
+        var result = AbandonableCall.Run(
+            () => Init(backend, context),
+            late =>
+            {
+                if (late == ma_result.MA_SUCCESS)
+                {
+                    Ma.ma_context_uninit(context);
+                }
+
+                NativeBlock.Free(context);
+            },
+            cancellationToken);
 
         if (result != ma_result.MA_SUCCESS)
         {
@@ -59,6 +83,20 @@ public sealed unsafe class AudioContext : IDisposable
         }
 
         return new AudioContext(context);
+    }
+
+    // Everything ma_context_init reads lives here, not in Create's frame,
+    // which a cancelled caller has already left.
+    private static ma_result Init(AudioBackend? backend, ma_context* context)
+    {
+        var config = Ma.ma_context_config_init();
+        if (backend is { } requested)
+        {
+            var native = (ma_backend)requested;
+            return Ma.ma_context_init(&native, 1, &config, context);
+        }
+
+        return Ma.ma_context_init(null, 0, &config, context);
     }
 
     /// <summary>The backend this context initialized.</summary>
@@ -100,6 +138,47 @@ public sealed unsafe class AudioContext : IDisposable
 
     internal LinkedListNode<IDisposable> Register(IDisposable child) => _children.Add(child);
 
+    /// <summary>An init against this context is about to run on a background thread; keeps the native context alive until <see cref="EndInit"/>.</summary>
+    internal void BeginInit()
+    {
+        lock (_lock)
+        {
+            ObjectDisposedException.ThrowIf(_context == null, this);
+            _initsInFlight++;
+        }
+    }
+
+    /// <summary>That init returned; releases the native context if <see cref="Dispose"/> ran meanwhile.</summary>
+    internal void EndInit()
+    {
+        ma_context* release = null;
+        lock (_lock)
+        {
+            if (--_initsInFlight == 0)
+            {
+                release = _orphaned;
+                _orphaned = null;
+            }
+        }
+
+        if (release != null)
+        {
+            Release(release);
+        }
+    }
+
+    /// <summary>Whether the native context is still allocated (for tests: an abandoned init defers the release).</summary>
+    internal bool IsNativeAlive
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _context != null || _orphaned != null;
+            }
+        }
+    }
+
     internal void Unregister(LinkedListNode<IDisposable>? node) => _children.Remove(node);
 
     /// <summary>Disposes every device and engine on this context, then the context.</summary>
@@ -111,8 +190,24 @@ public sealed unsafe class AudioContext : IDisposable
         }
 
         _children.DisposeAll();
-        Ma.ma_context_uninit(_context);
-        NativeBlock.Free(_context);
-        _context = null;
+
+        ma_context* release;
+        lock (_lock)
+        {
+            release = _initsInFlight == 0 ? _context : null;
+            _orphaned = _initsInFlight == 0 ? null : _context;
+            _context = null;
+        }
+
+        if (release != null)
+        {
+            Release(release);
+        }
+    }
+
+    private static void Release(ma_context* context)
+    {
+        Ma.ma_context_uninit(context);
+        NativeBlock.Free(context);
     }
 }

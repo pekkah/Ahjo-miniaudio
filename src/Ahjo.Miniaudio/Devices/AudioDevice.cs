@@ -54,56 +54,87 @@ public sealed unsafe class AudioDevice : IDisposable
     private GCHandle<AudioDevice> _self;
     private Exception? _fault;
 
-    private AudioDevice(AudioContext? context, in AudioDeviceDescription description, IAudioRenderer renderer)
+    private AudioDevice(AudioContext? context, in AudioDeviceDescription description, IAudioRenderer renderer, CancellationToken cancellationToken)
     {
         _renderer = renderer;
         // Opaque: its layout differs per platform, so the size comes from the binary.
-        _device = (ma_device*)NativeBlock.Alloc(Ma.ahjo_ma_sizeof_ma_device());
-        _self = new GCHandle<AudioDevice>(this);
-        try
-        {
-            var config = Ma.ma_device_config_init(ma_device_type.ma_device_type_playback);
-            config.playback.format = ma_format.ma_format_f32;
-            config.playback.channels = (uint)description.Channels;
-            config.sampleRate = (uint)description.SampleRate;
-            config.periodSizeInFrames = (uint)description.PeriodSizeInFrames;
-            config.dataCallback = &OnData;
-            config.notificationCallback = &OnNotification;
-            config.pUserData = (void*)GCHandle<AudioDevice>.ToIntPtr(_self);
-
-            ma_device_id id;
-            if (description.PlaybackDevice is { } device)
+        var device = (ma_device*)NativeBlock.Alloc(Ma.ahjo_ma_sizeof_ma_device());
+        var self = new GCHandle<AudioDevice>(this);
+        var contextNative = context is null ? null : context.Native;
+        var copy = description;
+        var result = AbandonableCall.Run(
+            () => Init(contextNative, copy, self, device),
+            late =>
             {
-                id = device.Native;
-                config.playback.pDeviceID = &id;
-            }
+                // A late success may already be delivering notifications
+                // through the handle, so it outlives the uninit.
+                if (late == ma_result.MA_SUCCESS)
+                {
+                    Ma.ma_device_uninit(device);
+                }
 
-            MaCheck.ThrowIfFailed(Ma.ma_device_init(context is null ? null : context.Native, &config, _device), "ma_device_init");
-        }
-        catch
+                NativeBlock.Free(device);
+                self.Dispose();
+            },
+            cancellationToken,
+            context);
+
+        if (result != ma_result.MA_SUCCESS)
         {
-            _self.Dispose();
-            NativeBlock.Free(_device);
-            _device = null;
-            throw;
+            self.Dispose();
+            NativeBlock.Free(device);
+            throw new MiniaudioException(result, "ma_device_init");
         }
 
-        Channels = (int)Ma.ahjo_ma_device_get_playback_channels(_device);
-        SampleRate = (int)Ma.ahjo_ma_device_get_sample_rate(_device);
+        _device = device;
+        _self = self;
+        Channels = (int)Ma.ahjo_ma_device_get_playback_channels(device);
+        SampleRate = (int)Ma.ahjo_ma_device_get_sample_rate(device);
         _context = context;
         _registration = context?.Register(this);
+    }
+
+    // Everything ma_device_init reads lives here, not in the constructor's
+    // frame, which a cancelled caller has already left.
+    private static ma_result Init(ma_context* context, AudioDeviceDescription description, GCHandle<AudioDevice> self, ma_device* device)
+    {
+        var config = Ma.ma_device_config_init(ma_device_type.ma_device_type_playback);
+        config.playback.format = ma_format.ma_format_f32;
+        config.playback.channels = (uint)description.Channels;
+        config.sampleRate = (uint)description.SampleRate;
+        config.periodSizeInFrames = (uint)description.PeriodSizeInFrames;
+        config.dataCallback = &OnData;
+        config.notificationCallback = &OnNotification;
+        config.pUserData = (void*)GCHandle<AudioDevice>.ToIntPtr(self);
+
+        ma_device_id id;
+        if (description.PlaybackDevice is { } playbackDevice)
+        {
+            id = playbackDevice.Native;
+            config.playback.pDeviceID = &id;
+        }
+
+        return Ma.ma_device_init(context, &config, device);
     }
 
     /// <summary>Opens a playback device that renders through <paramref name="renderer"/>.</summary>
     /// <param name="context">The backend to open it on; <see langword="null"/> for the platform default.</param>
     /// <param name="description">Which device, and the format to request.</param>
     /// <param name="renderer">Called on the audio thread once per period.</param>
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend; see <see cref="AudioContext.Create"/> for
+    /// what cancelling does and does not do. On an explicit
+    /// <paramref name="context"/>, an abandoned open keeps that context's native
+    /// state alive until it returns, even if the context is disposed meanwhile.
+    /// </param>
     /// <exception cref="MiniaudioException">The backend could not open the device.</exception>
-    public static AudioDevice Create(AudioContext? context, in AudioDeviceDescription description, IAudioRenderer renderer)
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public static AudioDevice Create(AudioContext? context, in AudioDeviceDescription description, IAudioRenderer renderer, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(renderer);
         description.Validate();
-        return new AudioDevice(context, description, renderer);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new AudioDevice(context, description, renderer, cancellationToken);
     }
 
     /// <summary>The channel count the device actually opened with — what <see cref="IAudioRenderer.Render"/> receives.</summary>

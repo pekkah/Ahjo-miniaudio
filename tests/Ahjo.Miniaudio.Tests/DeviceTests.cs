@@ -26,7 +26,7 @@ public class DeviceTests
     {
         using var context = TestAudio.NullContext();
         var renderer = new CountingRenderer();
-        using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = 2, SampleRate = 48000 }, renderer);
+        using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = 2, SampleRate = 48000 }, renderer, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, device.Channels);
         Assert.Equal(48000, device.SampleRate);
@@ -45,7 +45,7 @@ public class DeviceTests
     {
         using var context = TestAudio.NullContext();
         var renderer = new ThrowingRenderer();
-        using var device = AudioDevice.Create(context, default, renderer);
+        using var device = AudioDevice.Create(context, default, renderer, TestContext.Current.CancellationToken);
 
         device.Start();
         Assert.True(TestAudio.WaitUntil(() => device.Fault is not null), "the fault was never latched");
@@ -62,7 +62,7 @@ public class DeviceTests
     {
         using var context = TestAudio.NullContext();
         var renderer = new CountingRenderer();
-        using var device = AudioDevice.Create(context, default, renderer);
+        using var device = AudioDevice.Create(context, default, renderer, TestContext.Current.CancellationToken);
 
         device.Start();
         device.Stop();
@@ -76,7 +76,7 @@ public class DeviceTests
     {
         using var context = TestAudio.NullContext();
         var renderer = new AllocationProbeRenderer();
-        using var device = AudioDevice.Create(context, default, renderer);
+        using var device = AudioDevice.Create(context, default, renderer, TestContext.Current.CancellationToken);
 
         device.Start();
         Assert.True(TestAudio.WaitUntil(() => Volatile.Read(ref renderer.Done)), "the probe never finished");
@@ -94,7 +94,7 @@ public class DeviceTests
         sound.Play();
 
         var renderer = new EngineRenderer(engine);
-        using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = engine.Channels, SampleRate = engine.SampleRate }, renderer);
+        using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = engine.Channels, SampleRate = engine.SampleRate }, renderer, TestContext.Current.CancellationToken);
         device.Start();
 
         Assert.True(TestAudio.WaitUntil(() => engine.TimeInFrames > 4800), "the device never pulled the engine");
@@ -108,7 +108,7 @@ public class DeviceTests
     public void DisposingTheContextDisposesItsDevices()
     {
         var context = TestAudio.NullContext();
-        var device = AudioDevice.Create(context, default, new CountingRenderer());
+        var device = AudioDevice.Create(context, default, new CountingRenderer(), TestContext.Current.CancellationToken);
         device.Start();
 
         context.Dispose();
@@ -122,7 +122,7 @@ public class DeviceTests
     public void DescriptionRejectsNegativeValues()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            AudioDevice.Create(null, new AudioDeviceDescription { Channels = -1 }, new CountingRenderer()));
+            AudioDevice.Create(null, new AudioDeviceDescription { Channels = -1 }, new CountingRenderer(), TestContext.Current.CancellationToken));
     }
 
     private sealed class CountingRenderer : IAudioRenderer
