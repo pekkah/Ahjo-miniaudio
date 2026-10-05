@@ -95,6 +95,33 @@ Native failures throw `MiniaudioException` with the raw `ma_result`. Misuse
 throws the standard `Argument*`, `ObjectDisposed` and `InvalidOperation`
 exceptions.
 
+## Backends that never answer
+
+Opening a context, device or engine talks to the system's audio server, and
+some backends wait for it with no timeout: PulseAudio blocks forever on a
+server that accepted the connection and then stopped responding (seen with
+WSLg). `AudioContext.Create`, `AudioDevice.Create` and `AudioEngine.Create`
+take a `CancellationToken` so you can give up:
+
+```csharp
+using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+AudioContext context;
+try
+{
+    context = AudioContext.Create(default, timeout.Token);
+}
+catch (OperationCanceledException)
+{
+    context = AudioContext.Create(new AudioContextDescription { Backend = AudioBackend.Null });
+}
+```
+
+miniaudio cannot interrupt that wait, so cancelling stops *you* waiting. It
+doesn't stop the init. The init keeps running on a background thread, and its
+memory is released whenever it returns. If it never returns, one parked thread
+and that allocation stay until the process exits. Without a token, `Create`
+blocks just as miniaudio does.
+
 ## Platform support
 
 Follows `Ahjo.Miniaudio.Native`: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`
