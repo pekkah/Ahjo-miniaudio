@@ -14,6 +14,8 @@
       "Bash(dotnet tool restore)",
       "Bash(dotnet restore:*)",
       "Bash(dotnet pack:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(dotnet run --project samples/HelloAudio -- --null:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",

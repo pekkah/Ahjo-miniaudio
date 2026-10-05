@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 .NET 11 / C# 15 bindings + wrapper for [miniaudio](https://github.com/mackron/miniaudio), aimed at the Ahjo game engine. Structure and conventions follow the sibling repo [Ahjo-Vulkan](https://github.com/pekkah/Ahjo-Vulkan); when in doubt about a pattern, look there first.
 
+Work is driven by GitHub issues. `/work-issue <number>` runs the standard flow: triage → architect (spec + plan) → approval → implementer → reviewers → PR.
+
 ## Load-bearing invariants
 
 1. **Generated code is generated.** Never hand-edit `src/Ahjo.Miniaudio.Native/Generated/`. Edit `tools/generate-miniaudio.rsp` (or `MiniaudioDefines`) and regenerate (`/regen-bindings`). Hand-written additions to the Native project go in a sibling `Manual/` folder.
@@ -79,6 +81,37 @@ Every test runs on miniaudio's **null backend**, which simulates a device on a t
 
 Versions come from MinVer (`v*` tags). `publish.yml` packs a preview on every push to `main` and a stable package on a GitHub Release. It pushes to NuGet.org only when the `NUGET_PUBLISH` repo variable is `true` **and** `NUGET_KEY` is set; otherwise packages are workflow artifacts only. The shipped native binary comes from `build-miniaudio-native.yml`, which both CI and publish call, and which runs `Ahjo.Miniaudio.Native.Tests` before uploading.
 
+## Roles: architect and implementer
+
+Non-trivial work splits into two roles, each a subagent in `.claude/agents/`:
+
+- **architect** — turns a GitHub issue into a paired design spec + implementation plan under `docs/design/`. Explores the code, weighs options, decides. Touches docs only, never `src/`.
+- **implementer** — executes an approved plan step by step: edits code, builds, tests. Doesn't redesign; deviations from the plan get reported back, not improvised.
+
+The bar for "non-trivial" is: would a reviewer want the *why* written down? Typo/one-liner fixes skip the spec and go straight to implementation; a pin bump or rsp change goes through `/regen-bindings`.
+
+Reviewers close the loop before a PR: `miniaudio-correctness-reviewer` (layout, lifetime and audio-thread correctness) and `alloc-coverage-checker` (allocation-test coverage) on any diff touching the wrapper surface.
+
+## Spec-driven workflow
+
+- `docs/design/specs/YYYY-MM-DD-issue-NN-<topic>-design.md` — "what and why"
+- `docs/design/plans/YYYY-MM-DD-issue-NN-<topic>.md` — "how"
+
+Conventions and the quality bar: `docs/design/CLAUDE.md`.
+
 ## Commit + PR style
 
 Commits: `<area>: <imperative>` — e.g. `Native: bump miniaudio to 0.11.26`, `CI: add linux-x64 lane`. PRs reference their issue (`Closes #NN`) and merge to `main`.
+
+## Skills + agents in this repo
+
+| Kind | Name | Purpose |
+|---|---|---|
+| skill | `/work-issue` | end-to-end GitHub-issue flow (triage → spec → implement → review → PR) |
+| skill | `/regen-bindings` | safe regeneration of the miniaudio bindings (pin bump, regen, portability check, tests) |
+| agent | `architect` | issue → spec + plan (docs only) |
+| agent | `implementer` | approved plan → code + tests |
+| agent | `miniaudio-correctness-reviewer` | finds the interop bugs nothing diagnoses at runtime: layout, teardown order, handle lifetime, callbacks |
+| agent | `alloc-coverage-checker` | per-frame diff → allocation-test coverage + allocation smells |
+
+Reviewer agents kick in automatically on relevant diffs; invoke explicitly when reviewing a PR.
