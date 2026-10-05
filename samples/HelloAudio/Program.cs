@@ -72,9 +72,11 @@ internal static class Program
         }
     }
 
-    // Opening the backend talks to the system's audio server, and some can
-    // wait forever on a broken one (PulseAudio behind a wedged WSLg server).
-    // Give up after a while and play silently on the null backend instead.
+    // Opening the backend talks to the system's audio server. There may be
+    // none that works (a headless machine), and some wait forever on a broken
+    // one (PulseAudio behind a wedged WSLg server). Either way, say so and
+    // play silently on the null backend — the wrapper never picks it on its
+    // own.
     private static AudioContext CreateContext(bool useNullBackend)
     {
         var nullBackend = new AudioContextDescription { Backend = AudioBackend.Null };
@@ -91,6 +93,11 @@ internal static class Program
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine($"The audio backend did not answer within {BackendTimeout.TotalSeconds} s; using the null backend (no sound).");
+            return AudioContext.Create(nullBackend);
+        }
+        catch (MiniaudioException e)
+        {
+            Console.Error.WriteLine($"No audio backend opened ({e.Result}); using the null backend (no sound).");
             return AudioContext.Create(nullBackend);
         }
     }
