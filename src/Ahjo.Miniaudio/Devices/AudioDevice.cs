@@ -54,6 +54,15 @@ public sealed unsafe class AudioDevice : IDisposable
     private GCHandle<AudioDevice> _self;
     private Exception? _fault;
 
+    // Calls (Start, Stop) still running on an AbandonableCall thread after
+    // their caller stopped waiting; Dispose defers the native release to them.
+    private readonly InFlightCalls _calls = new(typeof(AudioDevice));
+
+    // Set when the caller no longer owns a running device: its Create was
+    // cancelled, or its Dispose had to defer the uninit. The callbacks then
+    // stay away from the renderer.
+    private volatile bool _closed;
+
     private AudioDevice(AudioContext? context, in AudioDeviceDescription description, IAudioRenderer renderer, CancellationToken cancellationToken)
     {
         _renderer = renderer;
@@ -82,12 +91,12 @@ public sealed unsafe class AudioDevice : IDisposable
                 cancellationToken,
                 outer: context?.Calls);
         }
-        catch (OperationCanceledException e)
+        catch (OperationCanceledException)
         {
             // The init may still succeed on its thread and notify through
-            // the handle before it is uninitialized; a set fault keeps those
+            // the handle before it is uninitialized; keep those
             // notifications away from an object the caller never received.
-            Interlocked.CompareExchange(ref _fault, e, null);
+            _closed = true;
             throw;
         }
 
@@ -167,10 +176,56 @@ public sealed unsafe class AudioDevice : IDisposable
     public Exception? Fault => Volatile.Read(ref _fault);
 
     /// <summary>Starts the audio thread pulling from the renderer.</summary>
-    public void Start() => MaCheck.ThrowIfFailed(Ma.ma_device_start(Native), "ma_device_start");
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend; see <see cref="AudioContext.Create"/>.
+    /// A cancelled start carries on in the background, so the device may
+    /// still start once the backend answers.
+    /// </param>
+    /// <exception cref="MiniaudioException">The backend could not start the device.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public void Start(CancellationToken cancellationToken = default)
+    {
+        var device = Native;
+        if (!cancellationToken.CanBeCanceled)
+        {
+            MaCheck.ThrowIfFailed(Ma.ma_device_start(device), "ma_device_start");
+            return;
+        }
+
+        Control(device, start: true, cancellationToken);
+    }
 
     /// <summary>Stops the device; returns once the render callback is no longer running.</summary>
-    public void Stop() => MaCheck.ThrowIfFailed(Ma.ma_device_stop(Native), "ma_device_stop");
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend; see <see cref="AudioContext.Create"/>.
+    /// Only a stop that returns normally guarantees the render callback has
+    /// stopped: a cancelled one carries on in the background.
+    /// </param>
+    /// <exception cref="MiniaudioException">The backend could not stop the device.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public void Stop(CancellationToken cancellationToken = default)
+    {
+        var device = Native;
+        if (!cancellationToken.CanBeCanceled)
+        {
+            MaCheck.ThrowIfFailed(Ma.ma_device_stop(device), "ma_device_stop");
+            return;
+        }
+
+        Control(device, start: false, cancellationToken);
+    }
+
+    // Separate from Start/Stop so their no-token path allocates no closure.
+    private void Control(ma_device* device, bool start, CancellationToken cancellationToken)
+    {
+        var result = AbandonableCall.Run(
+            () => start ? Ma.ma_device_start(device) : Ma.ma_device_stop(device),
+            static _ => { },
+            cancellationToken,
+            _calls,
+            _context?.Calls);
+        MaCheck.ThrowIfFailed(result, start ? "ma_device_start" : "ma_device_stop");
+    }
 
     private ma_device* Native
     {
@@ -182,6 +237,11 @@ public sealed unsafe class AudioDevice : IDisposable
     }
 
     /// <summary>Stops and closes the device.</summary>
+    /// <remarks>
+    /// Never blocks on the backend. If a cancelled <see cref="Start"/> or
+    /// <see cref="Stop"/> is still waiting on it, the native device is closed
+    /// when that call returns; the renderer is not called again either way.
+    /// </remarks>
     public void Dispose()
     {
         var device = _device;
@@ -195,17 +255,28 @@ public sealed unsafe class AudioDevice : IDisposable
 
         // Uninit stops the thread and still delivers the Stopped
         // notification through pUserData, so the handle must outlive it.
-        Ma.ma_device_uninit(device);
-        NativeBlock.Free(device);
-        _self.Dispose();
+        var self = _self;
+        var releasedNow = _calls.Release(() =>
+        {
+            Ma.ma_device_uninit(device);
+            NativeBlock.Free(device);
+            self.Dispose();
+        });
+        if (!releasedNow)
+        {
+            _closed = true;
+        }
     }
+
+    /// <summary>The calls in flight against this device (for tests).</summary>
+    internal InFlightCalls Calls => _calls;
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnData(ma_device* device, void* output, void* input, uint frameCount)
     {
         // The one native call per period; the channel count was cached at init.
         var self = GCHandle<AudioDevice>.FromIntPtr((nint)Ma.ahjo_ma_device_get_user_data(device)).Target;
-        if (Volatile.Read(ref self._fault) is not null)
+        if (self._closed || Volatile.Read(ref self._fault) is not null)
         {
             return; // the buffer arrives silenced
         }
@@ -227,7 +298,7 @@ public sealed unsafe class AudioDevice : IDisposable
     private static void OnNotification(ma_device_notification* notification)
     {
         var self = GCHandle<AudioDevice>.FromIntPtr((nint)Ma.ahjo_ma_device_get_user_data(notification->pDevice)).Target;
-        if (Volatile.Read(ref self._fault) is not null)
+        if (self._closed || Volatile.Read(ref self._fault) is not null)
         {
             return;
         }

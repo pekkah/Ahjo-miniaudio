@@ -47,7 +47,8 @@ internal sealed class InFlightCalls(Type owner)
     }
 
     /// <summary>Runs <paramref name="release"/> now, or after the last call in flight returns.</summary>
-    public void Release(Action release)
+    /// <returns><see langword="true"/> if it ran now; <see langword="false"/> if it was deferred.</returns>
+    public bool Release(Action release)
     {
         lock (_lock)
         {
@@ -55,11 +56,12 @@ internal sealed class InFlightCalls(Type owner)
             if (_count != 0)
             {
                 _release = release;
-                return;
+                return false;
             }
         }
 
         Run(release);
+        return true;
     }
 
     /// <summary>Whether the release has finished running (for tests).</summary>

@@ -260,6 +260,57 @@ public class CancellationTests
         Assert.True(engine.Channels > 0);
     }
 
+    [Fact]
+    public void ADeviceDisposedWithACallInFlightGoesQuietAndReleasesLater()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var context = TestAudio.NullContext();
+        var renderer = new CountingRenderer();
+        var device = AudioDevice.Create(context, default, renderer, token);
+        device.Start(token);
+        Assert.True(SpinWait.SpinUntil(() => Volatile.Read(ref renderer.Calls) > 0, Patience), "the device never rendered");
+
+        // Stand in for a Start/Stop wedged on the backend.
+        using var release = new ManualResetEventSlim();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        Assert.Throws<OperationCanceledException>(() => AbandonableCall.Run(
+            () =>
+            {
+                release.Wait(Patience, token);
+                return ma_result.MA_SUCCESS;
+            },
+            static _ => { },
+            cts.Token,
+            device.Calls,
+            context.Calls));
+
+        device.Dispose();
+        context.Dispose();
+        Assert.False(device.Calls.IsReleased);
+        Assert.True(context.IsNativeAlive);
+
+        // Still running natively, but no longer calling the renderer (one
+        // period already inside the callback may finish).
+        Thread.Sleep(50);
+        var calls = Volatile.Read(ref renderer.Calls);
+        Thread.Sleep(200);
+        Assert.Equal(calls, Volatile.Read(ref renderer.Calls));
+
+        release.Set();
+        Assert.True(SpinWait.SpinUntil(() => device.Calls.IsReleased && !context.IsNativeAlive, Patience), "the deferred release never ran");
+    }
+
+    private sealed class CountingRenderer : IAudioRenderer
+    {
+        public int Calls;
+
+        public void Render(Span<float> output, int channels)
+        {
+            output.Clear();
+            Interlocked.Increment(ref Calls);
+        }
+    }
+
     private sealed class SilentRenderer : IAudioRenderer
     {
         public void Render(Span<float> output, int channels) => output.Clear();

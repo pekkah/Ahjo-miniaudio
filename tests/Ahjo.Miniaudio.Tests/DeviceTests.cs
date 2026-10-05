@@ -13,12 +13,12 @@ public class DeviceTests
         using var context = TestAudio.NullContext();
 
         Assert.Equal(AudioBackend.Null, context.Backend);
-        var devices = context.GetPlaybackDevices();
+        var devices = context.GetPlaybackDevices(TestContext.Current.CancellationToken);
         Assert.NotEmpty(devices);
         Assert.False(string.IsNullOrEmpty(devices[0].Name));
 
         // Ids are stable across enumerations and compare by value.
-        Assert.Equal(devices[0].Id, context.GetPlaybackDevices()[0].Id);
+        Assert.Equal(devices[0].Id, context.GetPlaybackDevices(TestContext.Current.CancellationToken)[0].Id);
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public class DeviceTests
         Assert.Equal(48000, device.SampleRate);
         Assert.False(device.IsStarted);
 
-        device.Start();
+        device.Start(TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => Volatile.Read(ref renderer.Calls) > 0), "the null device never rendered");
 
         Assert.Equal(2, renderer.Channels);
@@ -47,7 +47,7 @@ public class DeviceTests
         var renderer = new ThrowingRenderer();
         using var device = AudioDevice.Create(context, default, renderer, TestContext.Current.CancellationToken);
 
-        device.Start();
+        device.Start(TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => device.Fault is not null), "the fault was never latched");
         var calls = Volatile.Read(ref renderer.Calls);
         Thread.Sleep(100); // several periods
@@ -64,8 +64,8 @@ public class DeviceTests
         var renderer = new CountingRenderer();
         using var device = AudioDevice.Create(context, default, renderer, TestContext.Current.CancellationToken);
 
-        device.Start();
-        device.Stop();
+        device.Start(TestContext.Current.CancellationToken);
+        device.Stop(TestContext.Current.CancellationToken);
 
         Assert.True(TestAudio.WaitUntil(() => renderer.Notifications.Contains(AudioDeviceNotification.Stopped)));
         Assert.Contains(AudioDeviceNotification.Started, renderer.Notifications);
@@ -78,7 +78,7 @@ public class DeviceTests
         var renderer = new AllocationProbeRenderer();
         using var device = AudioDevice.Create(context, default, renderer, TestContext.Current.CancellationToken);
 
-        device.Start();
+        device.Start(TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => Volatile.Read(ref renderer.Done)), "the probe never finished");
 
         Assert.Equal(0, renderer.Allocated);
@@ -95,7 +95,7 @@ public class DeviceTests
 
         var renderer = new EngineRenderer(engine);
         using var device = AudioDevice.Create(context, new AudioDeviceDescription { Channels = engine.Channels, SampleRate = engine.SampleRate }, renderer, TestContext.Current.CancellationToken);
-        device.Start();
+        device.Start(TestContext.Current.CancellationToken);
 
         Assert.True(TestAudio.WaitUntil(() => engine.TimeInFrames > 4800), "the device never pulled the engine");
         Assert.True(Volatile.Read(ref renderer.Peak) > 0.1f, $"peak {renderer.Peak}");
@@ -109,7 +109,7 @@ public class DeviceTests
     {
         var context = TestAudio.NullContext();
         var device = AudioDevice.Create(context, default, new CountingRenderer(), TestContext.Current.CancellationToken);
-        device.Start();
+        device.Start(TestContext.Current.CancellationToken);
 
         context.Dispose();
 

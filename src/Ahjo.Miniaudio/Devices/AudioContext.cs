@@ -103,11 +103,47 @@ public sealed unsafe class AudioContext : IDisposable
     /// The playback devices the backend reports. Allocates; call at setup or
     /// from a settings screen, not per frame.
     /// </summary>
-    public AudioDeviceInfo[] GetPlaybackDevices()
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend; see <see cref="Create"/>. A cancelled
+    /// enumeration carries on in the background and keeps the context's native
+    /// state alive until it returns.
+    /// </param>
+    /// <exception cref="MiniaudioException">The backend could not enumerate its devices.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public AudioDeviceInfo[] GetPlaybackDevices(CancellationToken cancellationToken = default)
+    {
+        var context = Native;
+        if (!cancellationToken.CanBeCanceled)
+        {
+            return Enumerate(context);
+        }
+
+        AudioDeviceInfo[]? devices = null;
+        var result = AbandonableCall.Run(
+            () =>
+            {
+                try
+                {
+                    devices = Enumerate(context);
+                    return ma_result.MA_SUCCESS;
+                }
+                catch (MiniaudioException e)
+                {
+                    return e.Result;
+                }
+            },
+            static _ => { },
+            cancellationToken,
+            _calls);
+        MaCheck.ThrowIfFailed(result, "ma_context_get_devices");
+        return devices!;
+    }
+
+    private static AudioDeviceInfo[] Enumerate(ma_context* context)
     {
         ma_device_info* infos;
         uint count;
-        MaCheck.ThrowIfFailed(Ma.ma_context_get_devices(Native, &infos, &count, null, null), "ma_context_get_devices");
+        MaCheck.ThrowIfFailed(Ma.ma_context_get_devices(context, &infos, &count, null, null), "ma_context_get_devices");
 
         // The array belongs to the context and the next enumeration
         // overwrites it, so copy out now.

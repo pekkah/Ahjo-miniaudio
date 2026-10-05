@@ -28,12 +28,12 @@ public class EngineDeviceTests
         Assert.True(TestAudio.WaitUntil(() => observer.Contains(AudioDeviceNotification.Started)));
         Assert.True(engine.IsStarted);
 
-        engine.Stop();
+        engine.Stop(TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => observer.Contains(AudioDeviceNotification.Stopped)));
         Assert.False(engine.IsStarted);
 
         observer.Clear();
-        engine.Start();
+        engine.Start(TestContext.Current.CancellationToken);
         Assert.True(TestAudio.WaitUntil(() => observer.Contains(AudioDeviceNotification.Started)));
         Assert.True(engine.IsStarted);
         Assert.Null(engine.Fault);
@@ -46,7 +46,7 @@ public class EngineDeviceTests
         using var engine = AudioEngine.Create(new AudioEngineDescription { Context = context, NoAutoStart = true }, TestContext.Current.CancellationToken);
 
         Assert.False(engine.IsStarted);
-        engine.Start();
+        engine.Start(TestContext.Current.CancellationToken);
         Assert.True(engine.IsStarted);
     }
 
@@ -90,8 +90,8 @@ public class EngineDeviceTests
         sound.Play();
 
         Assert.True(TestAudio.WaitUntil(() => engine.Fault is not null), "the observer's exception was not latched");
-        engine.Stop();
-        engine.Start();
+        engine.Stop(TestContext.Current.CancellationToken);
+        engine.Start(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, Volatile.Read(ref observer.Calls)); // not called again once faulted
         Assert.IsType<InvalidOperationException>(engine.Fault);
@@ -123,7 +123,7 @@ public class EngineDeviceTests
         var renderer = new NotificationThrowingRenderer();
         using var device = AudioDevice.Create(context, default, renderer, TestContext.Current.CancellationToken);
 
-        device.Start(); // Started throws inside the renderer's observer
+        device.Start(TestContext.Current.CancellationToken); // Started throws inside the renderer's observer
 
         Assert.True(TestAudio.WaitUntil(() => device.Fault is not null));
         var calls = Volatile.Read(ref renderer.RenderCalls);

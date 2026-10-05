@@ -97,6 +97,15 @@ public sealed unsafe class AudioEngine : IDisposable
     private ma_engine* _engine;
     private Exception? _fault;
 
+    // Calls (Start, Stop) still running on an AbandonableCall thread after
+    // their caller stopped waiting; Dispose defers the native release to them.
+    private readonly InFlightCalls _calls = new(typeof(AudioEngine));
+
+    // Set when the caller no longer owns a running engine: its Create was
+    // cancelled, or its Dispose had to defer the uninit. Notifications then
+    // stay away from the observer.
+    private volatile bool _closed;
+
     // Reads in flight on another thread (a device's audio thread pulling a
     // NoDevice engine). Dispose waits for it to drain before freeing.
     private int _readers;
@@ -144,12 +153,12 @@ public sealed unsafe class AudioEngine : IDisposable
                 cancellationToken,
                 outer: context?.Calls);
         }
-        catch (OperationCanceledException e)
+        catch (OperationCanceledException)
         {
             // The init may still succeed on its thread and notify through
-            // the handle before it is uninitialized; a set fault keeps those
+            // the handle before it is uninitialized; keep those
             // notifications away from an object the caller never received.
-            Interlocked.CompareExchange(ref _fault, e, null);
+            _closed = true;
             throw;
         }
 
@@ -301,12 +310,57 @@ public sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>Starts the engine's device.</summary>
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend; see <see cref="AudioContext.Create"/>.
+    /// A cancelled start carries on in the background, so the device may
+    /// still start once the backend answers.
+    /// </param>
     /// <exception cref="InvalidOperationException">The engine has no device (<see cref="AudioEngineDescription.NoDevice"/>).</exception>
-    public void Start() => MaCheck.ThrowIfFailed(Ma.ma_engine_start(DeviceEngine(nameof(Start))), "ma_engine_start");
+    /// <exception cref="MiniaudioException">The backend could not start the device.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public void Start(CancellationToken cancellationToken = default)
+    {
+        var engine = DeviceEngine(nameof(Start));
+        if (!cancellationToken.CanBeCanceled)
+        {
+            MaCheck.ThrowIfFailed(Ma.ma_engine_start(engine), "ma_engine_start");
+            return;
+        }
+
+        Control(engine, start: true, cancellationToken);
+    }
 
     /// <summary>Stops the engine's device; sounds keep their state and resume on <see cref="Start"/>.</summary>
+    /// <param name="cancellationToken">
+    /// Stops waiting for the backend; see <see cref="AudioContext.Create"/>.
+    /// A cancelled stop carries on in the background.
+    /// </param>
     /// <exception cref="InvalidOperationException">The engine has no device (<see cref="AudioEngineDescription.NoDevice"/>).</exception>
-    public void Stop() => MaCheck.ThrowIfFailed(Ma.ma_engine_stop(DeviceEngine(nameof(Stop))), "ma_engine_stop");
+    /// <exception cref="MiniaudioException">The backend could not stop the device.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> fired before the backend answered.</exception>
+    public void Stop(CancellationToken cancellationToken = default)
+    {
+        var engine = DeviceEngine(nameof(Stop));
+        if (!cancellationToken.CanBeCanceled)
+        {
+            MaCheck.ThrowIfFailed(Ma.ma_engine_stop(engine), "ma_engine_stop");
+            return;
+        }
+
+        Control(engine, start: false, cancellationToken);
+    }
+
+    // Separate from Start/Stop so their no-token path allocates no closure.
+    private void Control(ma_engine* engine, bool start, CancellationToken cancellationToken)
+    {
+        var result = AbandonableCall.Run(
+            () => start ? Ma.ma_engine_start(engine) : Ma.ma_engine_stop(engine),
+            static _ => { },
+            cancellationToken,
+            _calls,
+            _context?.Calls);
+        MaCheck.ThrowIfFailed(result, start ? "ma_engine_start" : "ma_engine_stop");
+    }
 
     // miniaudio answers a deviceless start/stop with MA_INVALID_OPERATION,
     // which would surface as a MiniaudioException — a native failure — for
@@ -406,21 +460,33 @@ public sealed unsafe class AudioEngine : IDisposable
         }
 
         // Uninit stops the device, which still delivers Stopped through the
-        // handle, so the handle must outlive it.
-        Ma.ma_engine_uninit(engine);
-        NativeBlock.Free(engine);
-        if (_self.IsAllocated)
+        // handle, so the handle must outlive it. A cancelled Start or Stop
+        // still waiting on the backend defers all of it to that call.
+        var self = _self;
+        var releasedNow = _calls.Release(() =>
         {
-            _self.Dispose();
+            Ma.ma_engine_uninit(engine);
+            NativeBlock.Free(engine);
+            if (self.IsAllocated)
+            {
+                self.Dispose();
+            }
+        });
+        if (!releasedNow)
+        {
+            _closed = true;
         }
     }
+
+    /// <summary>The calls in flight against this engine (for tests).</summary>
+    internal InFlightCalls Calls => _calls;
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnNotification(ma_device_notification* notification)
     {
         var engine = (ma_engine*)Ma.ahjo_ma_device_get_user_data(notification->pDevice);
         var self = GCHandle<AudioEngine>.FromIntPtr((nint)engine->pProcessUserData).Target;
-        if (Volatile.Read(ref self._fault) is not null)
+        if (self._closed || Volatile.Read(ref self._fault) is not null)
         {
             return;
         }
