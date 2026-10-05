@@ -39,7 +39,7 @@ public unsafe class NativeSmokeTests
     [Fact]
     public void NullBackendContextEnumeratesItsDevice()
     {
-        var context = Alloc<ma_context>();
+        var context = (ma_context*)Alloc(Ma.ahjo_ma_sizeof_ma_context());
         try
         {
             InitNullContext(context);
@@ -51,7 +51,7 @@ public unsafe class NativeSmokeTests
                 Assert.Equal(ma_result.MA_SUCCESS,
                     Ma.ma_context_get_devices(context, &playback, &playbackCount, &capture, &captureCount));
 
-                Assert.Equal(ma_backend.ma_backend_null, context->backend);
+                Assert.Equal(ma_backend.ma_backend_null, Ma.ahjo_ma_context_get_backend(context));
                 Assert.True(playbackCount >= 1, $"null backend reported {playbackCount} playback devices");
             }
             finally
@@ -68,8 +68,8 @@ public unsafe class NativeSmokeTests
     [Fact]
     public void NullBackendDeviceInvokesDataCallback()
     {
-        var context = Alloc<ma_context>();
-        var device = Alloc<ma_device>();
+        var context = (ma_context*)Alloc(Ma.ahjo_ma_sizeof_ma_context());
+        var device = (ma_device*)Alloc(Ma.ahjo_ma_sizeof_ma_device());
         var framesRequested = (long*)NativeMemory.AllocZeroed((nuint)sizeof(long));
         try
         {
@@ -118,7 +118,7 @@ public unsafe class NativeSmokeTests
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnData(ma_device* device, void* output, void* input, uint frameCount)
     {
-        Interlocked.Add(ref *(long*)device->pUserData, frameCount);
+        Interlocked.Add(ref *(long*)Ma.ahjo_ma_device_get_user_data(device), frameCount);
     }
 
     private static void InitNullContext(ma_context* context)
@@ -128,12 +128,14 @@ public unsafe class NativeSmokeTests
         Assert.Equal(ma_result.MA_SUCCESS, Ma.ma_context_init(&backend, 1, &config, context));
     }
 
-    // 64 bytes covers every alignment miniaudio declares (MA_ATOMIC and
-    // MA_SIMD_ALIGNMENT top out at 32).
-    private static T* Alloc<T>() where T : unmanaged
+    // ma_context and ma_device are opaque (their layout differs per
+    // platform), so the size comes from the binary. 64 bytes covers every
+    // alignment miniaudio declares (MA_ATOMIC and MA_SIMD_ALIGNMENT top out
+    // at 32).
+    private static void* Alloc(nuint size)
     {
-        var p = (T*)NativeMemory.AlignedAlloc((nuint)sizeof(T), 64);
-        NativeMemory.Clear(p, (nuint)sizeof(T));
+        var p = NativeMemory.AlignedAlloc(size, 64);
+        NativeMemory.Clear(p, size);
         return p;
     }
 }

@@ -38,7 +38,8 @@ public sealed unsafe class AudioContext : IDisposable
     /// <exception cref="MiniaudioException">No requested backend could be initialized.</exception>
     public static AudioContext Create(in AudioContextDescription description = default)
     {
-        var context = NativeBlock.Alloc<ma_context>();
+        // Opaque: its layout differs per platform, so the size comes from the binary.
+        var context = (ma_context*)NativeBlock.Alloc(Ma.ahjo_ma_sizeof_ma_context());
         var config = Ma.ma_context_config_init();
         ma_result result;
         if (description.Backend is { } backend)
@@ -61,7 +62,7 @@ public sealed unsafe class AudioContext : IDisposable
     }
 
     /// <summary>The backend this context initialized.</summary>
-    public AudioBackend Backend => (AudioBackend)Native->backend;
+    public AudioBackend Backend => (AudioBackend)Ma.ahjo_ma_context_get_backend(Native);
 
     /// <summary>
     /// The playback devices the backend reports. Allocates; call at setup or

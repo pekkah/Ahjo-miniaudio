@@ -8,11 +8,14 @@ name: Build miniaudio Native
 # Defined once and called by both ci.yml and publish.yml, so the binary a
 # release ships comes from the same definition CI proves.
 #
-# Only win-x64 ships today. The bindings are generated for
-# x86_64-pc-windows-msvc and miniaudio's runtime-state structs are
-# platform-specific, so a Linux entry belongs here only together with the
-# layout work described in CLAUDE.md ("Platform layouts") — add the lane
-# and its passing LayoutTests first, then the RID to the pack target.
+# One set of managed bindings serves every RID (the platform-dependent
+# runtime state is opaque; see CLAUDE.md, "Platform layouts"), but each RID's
+# binary still has to prove it: LayoutTests compares the bindings against
+# that binary's compiler. A RID is added to PackMiniaudioRuntimes only after
+# its lane here passes.
+#
+# Linux builds on the oldest hosted Ubuntu: the glibc it links against is
+# the floor for consumers (22.04 -> glibc 2.35).
 
 on:
   workflow_call: {}
@@ -33,6 +36,18 @@ jobs:
           - rid: win-x64
             runs-on: windows-latest
             lib-file: ahjo_miniaudio.dll
+          - rid: win-arm64
+            runs-on: windows-11-arm
+            lib-file: ahjo_miniaudio.dll
+          - rid: linux-x64
+            runs-on: ubuntu-22.04
+            lib-file: libahjo_miniaudio.so
+          - rid: linux-arm64
+            runs-on: ubuntu-22.04-arm
+            lib-file: libahjo_miniaudio.so
+          - rid: osx-arm64
+            runs-on: macos-latest
+            lib-file: libahjo_miniaudio.dylib
 
     steps:
       - name: Checkout

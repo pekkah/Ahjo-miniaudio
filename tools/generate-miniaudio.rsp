@@ -1,7 +1,7 @@
 --file
 native/miniaudio/include/miniaudio.h
-# Parse-time libc shims (stddef/stdint/stdarg) so no system C toolchain is
-# needed to regenerate.
+# Parse-time libc shims (stddef/stdint/stdarg, plus pthread/stdalign for a
+# POSIX target) so no system C toolchain is needed to regenerate.
 --include-directory
 native/stubs
 --include-directory
@@ -17,10 +17,13 @@ src/Ahjo.Miniaudio.Native/Generated
 --output-mode
 CSharp
 # Parse for a fixed target so the output is a function of the pinned header
-# alone, not of the machine that ran the regen. It must be the target of the
-# binaries we ship: miniaudio's runtime-state structs (ma_context, ma_device,
-# ma_mutex, ...) are laid out differently per platform, and LayoutTests holds
-# this choice to the compiler's own sizeof. See CLAUDE.md, "Platform layouts".
+# alone, not of the machine that ran the regen. The same output serves every
+# RID we ship: the platform-dependent parts of the header are excluded or
+# remapped below, after which parsing for x86_64-pc-linux-gnu,
+# aarch64-linux-gnu or arm64-apple-macos differs only in enum base type
+# (int vs uint) and char signedness, neither of which changes a layout.
+# LayoutTests checks the result against the compiler on each RID lane. See
+# CLAUDE.md, "Platform layouts".
 --additional
 --target=x86_64-pc-windows-msvc
 --language
@@ -40,7 +43,67 @@ multi-file
 # names (ma_format.ma_format_f32), which keeps the bindings 1:1 with the
 # header and avoids identifiers that would start with a digit
 # (ma_standard_sample_rate_48000).
+#
+# Everything below keeps the output platform-independent. It is a list to
+# re-check on every miniaudio bump: a new struct that embeds one of the
+# excluded types by value, or a new *_w entry point, would bring a platform
+# dependency back without failing the build. tools/check-bindings-portable.sh
+# is the cross-target diff that catches it.
+--exclude
+# Runtime state whose layout differs per platform: per-backend members under
+# MA_SUPPORT_*, and the sync types below embedded by value. Declared as empty
+# opaque structs in src/Ahjo.Miniaudio.Native/Manual/Opaque.cs and allocated
+# at the size the native ahjo_ma_sizeof_* exports report.
+ma_context
+ma_device
+ma_resource_manager
+ma_log
+ma_fence
+ma_async_notification_event
+ma_job_queue
+ma_device_job_thread
+# WASAPI-only types, reachable only from inside ma_context / ma_device.
+ma_IMMNotificationClient
+ma_context_command__wasapi
+# HANDLE on Windows, pthread types or structs over them on POSIX. Excluded so
+# a POSIX parse does not emit them as structs; remapped below so the
+# ma_mutex_* / ma_event_* / ma_semaphore_* functions take a typed pointer to
+# the opaque struct instead of the void** the Windows typedef erases to.
+ma_mutex
+ma_event
+ma_semaphore
+ma_thread
+# wchar_t is 2 bytes on Windows and 4 elsewhere, so these entry points have no
+# portable C# signature. Use the UTF-8 (char*) variants.
+ma_vfs_open_w
+ma_decoder_init_vfs_w
+ma_decoder_init_file_w
+ma_encoder_init_vfs_w
+ma_encoder_init_file_w
+ma_resource_manager_register_file_w
+ma_resource_manager_register_decoded_data_w
+ma_resource_manager_register_encoded_data_w
+ma_resource_manager_unregister_file_w
+ma_resource_manager_unregister_data_w
+ma_resource_manager_data_buffer_init_w
+ma_resource_manager_data_stream_init_w
+ma_resource_manager_data_source_init_w
+ma_sound_init_from_file_w
+# va_list is char* on Windows and a target-specific builtin elsewhere; a C#
+# caller cannot construct one portably anyway.
+ma_log_postv
 --remap
 size_t=nuint
+ma_mutex=ma_mutex
+ma_event=ma_event
+ma_semaphore=ma_semaphore
+ma_thread=ma_thread
+# The wchar_t* left in structs (pFilePathW, the onOpenW / onInitFileW
+# callbacks) is pointer-sized everywhere, but its pointee is not: void*
+# rather than a ushort* that would be wrong on POSIX. ma_wchar_win32 is
+# miniaudio's always-16-bit type (ma_device_id.wasapi) and stays ushort;
+# on Windows it is a typedef of wchar_t, so it needs its own remap.
+wchar_t=void
+ma_wchar_win32=ushort
 --with-access-specifier
 *=public

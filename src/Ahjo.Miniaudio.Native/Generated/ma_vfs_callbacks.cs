@@ -6,7 +6,7 @@ public unsafe partial struct ma_vfs_callbacks
     public delegate* unmanaged[Cdecl]<void*, sbyte*, uint, void**, ma_result> onOpen;
 
     [NativeTypeName("ma_result (*)(ma_vfs *, const wchar_t *, ma_uint32, ma_vfs_file *)")]
-    public delegate* unmanaged[Cdecl]<void*, ushort*, uint, void**, ma_result> onOpenW;
+    public delegate* unmanaged[Cdecl]<void*, void*, uint, void**, ma_result> onOpenW;
 
     [NativeTypeName("ma_result (*)(ma_vfs *, ma_vfs_file)")]
     public delegate* unmanaged[Cdecl]<void*, void*, ma_result> onClose;

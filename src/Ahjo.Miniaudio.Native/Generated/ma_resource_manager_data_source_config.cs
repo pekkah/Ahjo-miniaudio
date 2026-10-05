@@ -6,7 +6,7 @@ public unsafe partial struct ma_resource_manager_data_source_config
     public sbyte* pFilePath;
 
     [NativeTypeName("const wchar_t *")]
-    public ushort* pFilePathW;
+    public void* pFilePathW;
 
     [NativeTypeName("const ma_resource_manager_pipeline_notifications *")]
     public ma_resource_manager_pipeline_notifications* pNotifications;

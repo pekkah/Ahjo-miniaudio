@@ -11,11 +11,26 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
 
 jobs:
-  # Whole solution: wrapper + native suites. Every test uses miniaudio's null
-  # backend, so the hosted runner's lack of an audio device costs no coverage.
+  # Whole solution: wrapper + native suites, then the Native AOT sample, on
+  # every RID the package ships. Every test uses miniaudio's null backend, so
+  # a hosted runner's lack of an audio device costs no coverage.
   build-test:
-    name: Build & Test (windows-latest)
-    runs-on: windows-latest
+    name: Build & Test (${{ matrix.rid }})
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            runs-on: windows-latest
+          - rid: win-arm64
+            runs-on: windows-11-arm
+          - rid: linux-x64
+            runs-on: ubuntu-22.04
+          - rid: linux-arm64
+            runs-on: ubuntu-22.04-arm
+          - rid: osx-arm64
+            runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +40,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      # Native AOT links with clang on Linux and needs zlib's headers.
+      - name: Install Native AOT prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
       - name: Build (Release)
         run: dotnet build Ahjo.Miniaudio.slnx -c Release
 
@@ -33,20 +53,21 @@ jobs:
 
       # The sample is the Native AOT check: publishing with PublishAot=true
       # turns any trim/AOT warning reachable from the libraries into a build
-      # failure. Running the published exe on the null backend then proves the
-      # AOT binary and the copied ahjo_miniaudio.dll actually play audio.
+      # failure. Running the published binary on the null backend then proves
+      # the AOT binary and the copied ahjo_miniaudio library actually play
+      # audio.
       - name: AOT publish — HelloAudio
-        run: dotnet publish samples/HelloAudio/HelloAudio.csproj -c Release -r win-x64
+        run: dotnet publish samples/HelloAudio/HelloAudio.csproj -c Release -r ${{ matrix.rid }}
 
       - name: AOT run — HelloAudio (null backend)
-        shell: pwsh
+        shell: bash
         run: |
-          samples/HelloAudio/bin/Release/net11.0/win-x64/publish/HelloAudio.exe --null
-          if ($LASTEXITCODE -ne 0) { throw "HelloAudio exited with code $LASTEXITCODE" }
+          exe="samples/HelloAudio/bin/Release/net11.0/${{ matrix.rid }}/publish/HelloAudio"
+          if [ -f "$exe.exe" ]; then exe="$exe.exe"; fi
+          "$exe" --null
           # --pull plays the engine through an AudioDevice: the unmanaged
           # render callback running on miniaudio's thread, under AOT.
-          samples/HelloAudio/bin/Release/net11.0/win-x64/publish/HelloAudio.exe --null --pull
-          if ($LASTEXITCODE -ne 0) { throw "HelloAudio --pull exited with code $LASTEXITCODE" }
+          "$exe" --null --pull
 
   # The shippable per-RID binaries, built and smoke-tested by the same
   # reusable workflow publish.yml uses.

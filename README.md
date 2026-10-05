@@ -5,13 +5,14 @@ built for the Ahjo game engine. Targets .NET 11.
 
 | Package | What it is | Status |
 | --- | --- | --- |
-| `Ahjo.Miniaudio.Native` | Raw P/Invoke bindings generated from `miniaudio.h` + the `ahjo_miniaudio` native binary | win-x64 |
-| `Ahjo.Miniaudio` | Idiomatic wrapper: device, decoder and engine tiers | preview, win-x64 |
+| `Ahjo.Miniaudio.Native` | Raw P/Invoke bindings generated from `miniaudio.h` + the `ahjo_miniaudio` native binary | win-x64, win-arm64, linux-x64, linux-arm64, osx-arm64 |
+| `Ahjo.Miniaudio` | Idiomatic wrapper: device, decoder and engine tiers | preview, same RIDs |
 
 ## Building
 
 Prerequisites: the .NET 11 SDK (pinned in `global.json`), cmake ≥ 3.21, and a C
-toolchain (Visual Studio 2022+ with the C++ workload on Windows).
+toolchain (Visual Studio 2022+ with the C++ workload on Windows; gcc or clang on
+Linux; the Xcode command-line tools on macOS).
 
 ```bash
 dotnet tool restore
@@ -33,7 +34,8 @@ dotnet run --project samples/HelloAudio -- --pull        # the engine mixed from
 ```
 
 It also serves as the Native AOT check:
-`dotnet publish samples/HelloAudio -c Release -r win-x64`.
+`dotnet publish samples/HelloAudio -c Release -r <rid>` (e.g. `win-x64`, `linux-x64`,
+`osx-arm64`; Native AOT publishes for the host OS only).
 
 ## Regenerating the bindings
 
