@@ -80,7 +80,7 @@ public sealed unsafe class AudioDevice : IDisposable
                     self.Dispose();
                 },
                 cancellationToken,
-                context);
+                outer: context?.Calls);
         }
         catch (OperationCanceledException e)
         {

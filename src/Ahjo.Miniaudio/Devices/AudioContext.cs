@@ -30,15 +30,12 @@ public readonly record struct AudioContextDescription
 public sealed unsafe class AudioContext : IDisposable
 {
     private readonly ChildRegistry _children = new();
-    private readonly Lock _lock = new();
     private ma_context* _context;
 
-    // Device and engine inits against this context still running on a
-    // background thread after their caller cancelled (see AbandonableCall).
-    // They are using the native context, so Dispose leaves releasing it to
-    // the last of them, parked in _orphaned.
-    private int _initsInFlight;
-    private ma_context* _orphaned;
+    // Calls still running against the native context after their caller
+    // stopped waiting (device and engine inits, enumerations). Dispose leaves
+    // the native release to the last of them.
+    private readonly InFlightCalls _calls = new(typeof(AudioContext));
 
     private AudioContext(ma_context* context) => _context = context;
 
@@ -138,48 +135,13 @@ public sealed unsafe class AudioContext : IDisposable
 
     internal LinkedListNode<IDisposable> Register(IDisposable child) => _children.Add(child);
 
-    /// <summary>An init against this context is about to run on a background thread; keeps the native context alive until <see cref="EndInit"/>.</summary>
-    internal void BeginInit()
-    {
-        lock (_lock)
-        {
-            ObjectDisposedException.ThrowIf(_context == null, this);
-            _initsInFlight++;
-        }
-    }
-
-    /// <summary>That init returned; releases the native context if <see cref="Dispose"/> ran meanwhile.</summary>
-    internal void EndInit()
-    {
-        ma_context* release = null;
-        lock (_lock)
-        {
-            if (--_initsInFlight == 0)
-            {
-                release = _orphaned;
-                _orphaned = null;
-            }
-        }
-
-        if (release != null)
-        {
-            Release(release);
-        }
-    }
-
-    /// <summary>Whether the native context is still allocated (for tests: an abandoned init defers the release).</summary>
-    internal bool IsNativeAlive
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _context != null || _orphaned != null;
-            }
-        }
-    }
-
     internal void Unregister(LinkedListNode<IDisposable>? node) => _children.Remove(node);
+
+    /// <summary>The calls in flight against this context; device and engine calls pass it as their outer owner.</summary>
+    internal InFlightCalls Calls => _calls;
+
+    /// <summary>Whether the native context is still allocated (for tests: a call in flight defers the release).</summary>
+    internal bool IsNativeAlive => !_calls.IsReleased;
 
     /// <summary>Disposes every device and engine on this context, then the context.</summary>
     public void Dispose()
@@ -191,18 +153,9 @@ public sealed unsafe class AudioContext : IDisposable
 
         _children.DisposeAll();
 
-        ma_context* release;
-        lock (_lock)
-        {
-            release = _initsInFlight == 0 ? _context : null;
-            _orphaned = _initsInFlight == 0 ? null : _context;
-            _context = null;
-        }
-
-        if (release != null)
-        {
-            Release(release);
-        }
+        var context = _context;
+        _context = null;
+        _calls.Release(() => Release(context));
     }
 
     private static void Release(ma_context* context)

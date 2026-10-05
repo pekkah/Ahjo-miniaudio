@@ -132,7 +132,7 @@ public class CancellationTests
             },
             _ => abandoned.Set(),
             cts.Token,
-            context));
+            outer: context.Calls));
 
         // Disposed for the caller, but the init is still using the native
         // context, so it stays allocated.
@@ -153,6 +153,83 @@ public class CancellationTests
         context.Dispose();
 
         Assert.False(context.IsNativeAlive);
+    }
+
+    [Fact]
+    public void ReleaseRunsAtOnceWithNothingInFlight()
+    {
+        var calls = new InFlightCalls(typeof(CancellationTests));
+        var released = 0;
+
+        calls.Release(() => released++);
+
+        Assert.Equal(1, released);
+        Assert.True(calls.IsReleased);
+    }
+
+    [Fact]
+    public void ReleaseWaitsForTheLastCallInFlight()
+    {
+        var calls = new InFlightCalls(typeof(CancellationTests));
+        var released = 0;
+        calls.Begin();
+        calls.Begin();
+
+        calls.Release(() => released++);
+        Assert.Equal(0, released);
+
+        calls.End();
+        Assert.Equal(0, released);
+        Assert.False(calls.IsReleased);
+
+        calls.End();
+        Assert.Equal(1, released);
+        Assert.True(calls.IsReleased);
+    }
+
+    [Fact]
+    public void NoCallBeginsAfterRelease()
+    {
+        var calls = new InFlightCalls(typeof(CancellationTests));
+        calls.Release(() => { });
+
+        Assert.Throws<ObjectDisposedException>(calls.Begin);
+    }
+
+    [Fact]
+    public void AnOuterOwnerOutlivesTheInnerOne()
+    {
+        // A device's deferred uninit needs its context: inner must end (and
+        // release) before outer does.
+        var inner = new InFlightCalls(typeof(AudioDevice));
+        var outer = new InFlightCalls(typeof(AudioContext));
+        var order = new List<string>();
+        using var release = new ManualResetEventSlim();
+        using var abandoned = new ManualResetEventSlim();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        Assert.Throws<OperationCanceledException>(() => AbandonableCall.Run(
+            () =>
+            {
+                release.Wait(Patience, TestContext.Current.CancellationToken);
+                return ma_result.MA_SUCCESS;
+            },
+            _ => { },
+            cts.Token,
+            inner,
+            outer));
+
+        inner.Release(() => order.Add("inner"));
+        outer.Release(() =>
+        {
+            order.Add("outer");
+            abandoned.Set();
+        });
+        Assert.Empty(order);
+
+        release.Set();
+        Assert.True(abandoned.Wait(Patience, TestContext.Current.CancellationToken), "the owners were never released");
+        Assert.Equal(["inner", "outer"], order);
     }
 
     [Fact]

@@ -142,7 +142,7 @@ public sealed unsafe class AudioEngine : IDisposable
                     }
                 },
                 cancellationToken,
-                context);
+                outer: context?.Calls);
         }
         catch (OperationCanceledException e)
         {

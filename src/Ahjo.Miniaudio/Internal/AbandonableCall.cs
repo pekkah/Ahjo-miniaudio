@@ -23,13 +23,20 @@ namespace Ahjo.Miniaudio.Internal;
 /// must read nothing from the caller's
 /// stack — build its configs inside it. A call that never returns keeps its
 /// thread and its memory until the process exits.</para>
-/// <para>An init against an explicit <see cref="AudioContext"/> keeps that
-/// context's native state alive until the call returns, even if the context
-/// is disposed meanwhile (see <see cref="AudioContext.BeginInit"/>).</para>
+/// <para>The objects the call runs against are its owners: each one's
+/// <see cref="InFlightCalls"/> keeps its native state alive until the call
+/// returns, even if it is disposed meanwhile. <c>inner</c> is the object
+/// itself (a device), <c>outer</c> what it depends on (its context); they are
+/// ended inner first, so a deferred device uninit still has its context.</para>
 /// </remarks>
 internal static class AbandonableCall
 {
-    public static ma_result Run(Func<ma_result> call, Action<ma_result> abandon, CancellationToken cancellationToken, AudioContext? context = null)
+    public static ma_result Run(
+        Func<ma_result> call,
+        Action<ma_result> abandon,
+        CancellationToken cancellationToken,
+        InFlightCalls? inner = null,
+        InFlightCalls? outer = null)
     {
         if (!cancellationToken.CanBeCanceled)
         {
@@ -43,8 +50,18 @@ internal static class AbandonableCall
             cancellationToken.ThrowIfCancellationRequested();
         }
 
-        context?.BeginInit();
-        var pending = new Pending(call, abandon, context);
+        inner?.Begin();
+        try
+        {
+            outer?.Begin();
+        }
+        catch
+        {
+            inner?.End();
+            throw;
+        }
+
+        var pending = new Pending(call, abandon, inner, outer);
         var thread = new Thread(pending.Execute)
         {
             IsBackground = true,
@@ -54,7 +71,7 @@ internal static class AbandonableCall
         return pending.Wait(cancellationToken);
     }
 
-    private sealed class Pending(Func<ma_result> call, Action<ma_result> abandon, AudioContext? context)
+    private sealed class Pending(Func<ma_result> call, Action<ma_result> abandon, InFlightCalls? inner, InFlightCalls? outer)
     {
         private readonly Lock _lock = new();
         private readonly ManualResetEventSlim _done = new();
@@ -101,7 +118,7 @@ internal static class AbandonableCall
                 finally
                 {
                     _done.Dispose();
-                    context?.EndInit();
+                    EndOwners();
                 }
             }
         }
@@ -130,9 +147,21 @@ internal static class AbandonableCall
             }
 
             _done.Dispose();
-            context?.EndInit();
+            EndOwners();
             _exception?.Throw();
             return _result;
+        }
+
+        private void EndOwners()
+        {
+            try
+            {
+                inner?.End();
+            }
+            finally
+            {
+                outer?.End();
+            }
         }
     }
 }
