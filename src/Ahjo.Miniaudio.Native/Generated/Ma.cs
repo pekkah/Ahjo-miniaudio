@@ -1310,13 +1310,13 @@ public static unsafe partial class Ma
     public static extern sbyte* ma_log_level_to_string([NativeTypeName("ma_uint32")] uint logLevel);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_spinlock_lock([NativeTypeName("ma_spinlock *")] uint* pSpinlock);
+    public static extern ma_result ma_spinlock_lock([NativeTypeName("volatile ma_spinlock *")] uint* pSpinlock);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_spinlock_lock_noyield([NativeTypeName("ma_spinlock *")] uint* pSpinlock);
+    public static extern ma_result ma_spinlock_lock_noyield([NativeTypeName("volatile ma_spinlock *")] uint* pSpinlock);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-    public static extern ma_result ma_spinlock_unlock([NativeTypeName("ma_spinlock *")] uint* pSpinlock);
+    public static extern ma_result ma_spinlock_unlock([NativeTypeName("volatile ma_spinlock *")] uint* pSpinlock);
 
     [DllImport("ahjo_miniaudio", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     public static extern ma_result ma_mutex_init(ma_mutex* pMutex);

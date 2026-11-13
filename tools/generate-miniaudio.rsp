@@ -8,9 +8,9 @@ native/stubs
 native/miniaudio/include
 --namespace
 Ahjo.Miniaudio.Native
---methodClassName
+--method-class-name
 Ma
---libraryPath
+--library-path
 ahjo_miniaudio
 --output
 src/Ahjo.Miniaudio.Native/Generated
@@ -31,14 +31,15 @@ c
 --std
 c11
 --config
-latest-codegen
-generate-helper-types
-generate-file-scoped-namespaces
-generate-unmanaged-constants
-generate-disable-runtime-marshalling
-generate-aggressive-inlining
-exclude-enum-operators
-multi-file
+codegen=latest
+file=multi
+--generate
+helper-types
+file-scoped-namespaces
+unmanaged-constants
+disable-runtime-marshalling
+aggressive-inlining
+enum-operators=false
 # strip-enum-member-type-name stays OFF on purpose: enum members keep their C
 # names (ma_format.ma_format_f32), which keeps the bindings 1:1 with the
 # header and avoids identifiers that would start with a digit
