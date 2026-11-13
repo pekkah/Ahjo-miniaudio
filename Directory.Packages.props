@@ -14,7 +14,7 @@
   <!-- xunit.v3 runs on Microsoft.Testing.Platform (opted into in
        global.json); no VSTest adapter or Microsoft.NET.Test.Sdk needed. -->
   <ItemGroup>
-    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="xunit.v3" Version="4.0.3" />
   </ItemGroup>
 
   <!-- Derives package version from git tags + commit height; see

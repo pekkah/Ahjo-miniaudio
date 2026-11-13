@@ -10,7 +10,7 @@
       "rollForward": false
     },
     "nuget.mcp.server": {
-      "version": "1.4.16",
+      "version": "1.4.23",
       "commands": [
         "nuget-mcp-server"
       ],
