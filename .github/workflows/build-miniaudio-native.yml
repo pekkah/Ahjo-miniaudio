@@ -45,9 +45,10 @@ jobs:
           - rid: linux-arm64
             runs-on: ubuntu-22.04-arm
             lib-file: libahjo_miniaudio.so
-          - rid: osx-arm64
-            runs-on: macos-latest
-            lib-file: libahjo_miniaudio.dylib
+          # macOS lane disabled for now; re-enable together with ci.yml.
+          # - rid: osx-arm64
+          #   runs-on: macos-latest
+          #   lib-file: libahjo_miniaudio.dylib
 
     steps:
       - name: Checkout
