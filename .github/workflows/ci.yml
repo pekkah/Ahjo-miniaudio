@@ -29,8 +29,9 @@ jobs:
             runs-on: ubuntu-22.04
           - rid: linux-arm64
             runs-on: ubuntu-22.04-arm
-          - rid: osx-arm64
-            runs-on: macos-latest
+          # macOS lane disabled for now; re-enable together with build-miniaudio-native.yml.
+          # - rid: osx-arm64
+          #   runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
